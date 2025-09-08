@@ -1,3 +1,6 @@
 [submodule "Megatron-LM"]
 	path = Megatron-LM
 	url = https://github.com/NVIDIA/Megatron-LM.git
+[submodule "TransformerEngine"]
+	path = TransformerEngine
+	url = https://github.com/NVIDIA/TransformerEngine.git

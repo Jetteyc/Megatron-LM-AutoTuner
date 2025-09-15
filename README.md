@@ -21,25 +21,8 @@ Target shapes:
 - thd (mainly)
 - bshd
 
-## Methods
+## Docs
 
-This auto-tuner works based on Profiling-Planning method.
+[Doc in Lark](https://acs-frontier.feishu.cn/wiki/JRfAwjGeMiGmwWk3IM7ct26Tn2e)
 
-### Dense Models
-
-To achieve high MFU on dense models:
-
-- GEMM and TP communication shall be overlapped
-- Attention calculation and ring P2P shall be overlapped
-- The overlap shall not affect too much computation efficiency
-
-And based on above, use PP and VPP to decrease memory occupation to just fit in GPU memory.
-
-## MoE Models
-
-Shall wait for 1F1B overlap pipeline.
-
-## Challenges
-
-- remove pad models performance analysis
-- More flexible scenarios, with two types of models
+Go to [docs directory](./docs/)

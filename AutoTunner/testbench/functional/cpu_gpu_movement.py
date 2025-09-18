@@ -1,11 +1,19 @@
 # gpu_cpu_bandwidth_bi.py
-import torch
-import time
-import numpy as np
 import argparse
+import time
 
-def measure_once(num_bytes, direction="d2h", dtype=torch.float32, device="cuda:0",
-                 pinned=False, non_blocking=True):
+import numpy as np
+import torch
+
+
+def measure_once(
+    num_bytes: int,
+    direction: str = "d2h",
+    dtype: torch.dtype = torch.float32,
+    device: str = "cuda:0",
+    pinned: bool = False,
+    non_blocking: bool = True,
+) -> float:
     """Measure single transfer time (seconds). direction ∈ {"d2h", "h2d"}"""
     bytes_per_elem = torch.tensor([], dtype=dtype).element_size()
     num_elems = num_bytes // bytes_per_elem
@@ -47,9 +55,19 @@ def measure_once(num_bytes, direction="d2h", dtype=torch.float32, device="cuda:0
 
     return t1 - t0
 
-def test_sizes(sizes_gb, repeats=3, dtype=torch.float32, device="cuda:0"):
-    results = {"d2h_pageable": [], "d2h_pinned": [],
-               "h2d_pageable": [], "h2d_pinned": []}
+
+def test_sizes(
+    sizes_gb: list[float],
+    repeats: int = 3,
+    dtype: torch.dtype = torch.float32,
+    device: str = "cuda:0",
+) -> dict[str, list[dict[str, float]]]:
+    results = {
+        "d2h_pageable": [],
+        "d2h_pinned": [],
+        "h2d_pageable": [],
+        "h2d_pinned": [],
+    }
 
     for direction in ["d2h", "h2d"]:
         for pinned in [False, True]:
@@ -58,25 +76,35 @@ def test_sizes(sizes_gb, repeats=3, dtype=torch.float32, device="cuda:0"):
                 num_bytes = int(size_gb * (1024**3))
                 times = []
                 for r in range(repeats):
-                    t = measure_once(num_bytes, direction=direction, dtype=dtype,
-                                     device=device, pinned=pinned)
+                    t = measure_once(
+                        num_bytes,
+                        direction=direction,
+                        dtype=dtype,
+                        device=device,
+                        pinned=pinned,
+                    )
                     times.append(t)
                 best = min(times)
-                mean = sum(times)/len(times)
+                mean = sum(times) / len(times)
                 bw_best = size_gb / best
                 bw_mean = size_gb / mean
-                results[key].append({
-                    "size_gb": size_gb,
-                    "best_s": best,
-                    "mean_s": mean,
-                    "bw_best_gbps": bw_best,
-                    "bw_mean_gbps": bw_mean,
-                })
-                print(f"[{key}] {size_gb} GB: best {best:.4f}s ({bw_best:.2f} GB/s), "
-                      f"mean {mean:.4f}s ({bw_mean:.2f} GB/s)")
+                results[key].append(
+                    {
+                        "size_gb": size_gb,
+                        "best_s": best,
+                        "mean_s": mean,
+                        "bw_best_gbps": bw_best,
+                        "bw_mean_gbps": bw_mean,
+                    }
+                )
+                print(
+                    f"[{key}] {size_gb} GB: best {best:.4f}s ({bw_best:.2f} GB/s), "
+                    f"mean {mean:.4f}s ({bw_mean:.2f} GB/s)"
+                )
     return results
 
-def fit_bandwidth(records):
+
+def fit_bandwidth(records: list[dict[str, float]]) -> tuple[float, float]:
     sizes = np.array([r["size_gb"] for r in records])
     times = np.array([r["best_s"] for r in records])
     A = np.vstack([np.ones_like(sizes), sizes]).T
@@ -85,14 +113,20 @@ def fit_bandwidth(records):
     bw = 1.0 / inv_bw if inv_bw > 0 else float("inf")
     return overhead, bw
 
-def print_summary(results):
+
+def print_summary(results: dict[str, list[dict[str, float]]]) -> None:
     for key, recs in results.items():
         overhead, bw = fit_bandwidth(recs)
-        print(f"\n[{key}] Linear fit: Bandwidth ≈ {bw:.2f} GB/s, Overhead ≈ {overhead*1000:.2f} ms")
+        print(
+            f"\n[{key}] Linear fit: Bandwidth ≈ {bw:.2f} GB/s, Overhead ≈ {overhead*1000:.2f} ms"
+        )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Measure GPU<->CPU transfer bandwidth")
-    parser.add_argument("--sizes", nargs="+", type=float, default=[10,15,20,25], help="sizes in GB")
+    parser.add_argument(
+        "--sizes", nargs="+", type=float, default=[10, 15, 20, 25], help="sizes in GB"
+    )
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()

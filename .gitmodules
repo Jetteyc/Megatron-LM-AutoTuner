@@ -7,3 +7,6 @@
 [submodule "mbridge"]
 	path = mbridge
 	url = https://github.com/ISEEKYAN/mbridge.git
+[submodule "verl"]
+	path = verl
+	url = https://github.com/volcengine/verl.git

@@ -1,12 +1,17 @@
 from typing import Any, Tuple
 
+import tensordict
+from tensordict import TensorDict
 import torch
 from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
 from transformers import PretrainedConfig
 
 from verl.utils.model import compute_position_id_with_mask, create_random_mask
+from verl.utils.seqlen_balancing import rearrange_micro_batches
+from verl.utils.megatron.pipeline_parallel import make_batch_generator
 
 from .pack_sequence import generate_thd_input
+from .structs import InputTestCase
 
 """
     Follow some convinient implementation in verl
@@ -19,7 +24,7 @@ from .pack_sequence import generate_thd_input
 """
 
 
-def _get_model_input_bshd(
+def _get_one_model_input_bshd(
     model_config: PretrainedConfig, batch_size: int, seqlen: int
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     input_ids = torch.randint(
@@ -35,10 +40,10 @@ def _get_model_input_bshd(
     return input_ids, attention_mask, position_ids, None
 
 
-def _get_model_input_fsdp_thd(
+def _get_one_model_input_fsdp_thd(
     model_config: PretrainedConfig, batch_size: int, seqlen: int
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    input_ids, attention_mask, position_ids = _get_model_input_bshd(
+    input_ids, attention_mask, position_ids = _get_one_model_input_bshd(
         model_config, batch_size, seqlen
     )
     input_ids_rmpad, indices, *_ = unpad_input(input_ids.unsqueeze(-1), attention_mask)
@@ -49,10 +54,10 @@ def _get_model_input_fsdp_thd(
     return input_ids_rmpad, attention_mask, position_ids_rmpad, None
 
 
-def _get_model_input_megatron_thd(
+def _get_one_model_input_megatron_thd(
     model_config: PretrainedConfig, batch_size: int, seqlen: int
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    input_ids, attention_mask, position_ids = _get_model_input_bshd(
+    input_ids, attention_mask, position_ids = _get_one_model_input_bshd(
         model_config, batch_size, seqlen
     )
     input_ids_rmpad, packed_seq_params = generate_thd_input(
@@ -61,17 +66,75 @@ def _get_model_input_megatron_thd(
     return input_ids_rmpad, attention_mask, position_ids, packed_seq_params
 
 
-def get_model_input(
+def get_one_model_input(
     model_config: PretrainedConfig,
     batch_size: int,
     seqlen: int,
-    shape: str,
+    shape: str = "bshd",
     system: str = "megatron",
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Any]:
     if shape == "thd":
         if system == "megatron":
-            return _get_model_input_megatron_thd(model_config, batch_size, seqlen)
+            return _get_one_model_input_megatron_thd(model_config, batch_size, seqlen)
         elif system == "fsdp":
-            return _get_model_input_fsdp_thd(model_config, batch_size, seqlen)
+            return _get_one_model_input_fsdp_thd(model_config, batch_size, seqlen)
     else:
-        return _get_model_input_bshd(model_config, batch_size, seqlen)
+        return _get_one_model_input_bshd(model_config, batch_size, seqlen)
+        
+
+class DataSet:
+    def __init__(
+        self,
+        model_config: PretrainedConfig,
+        test_cases: list[InputTestCase],
+        use_dynamic_bsz_balance: bool = True,
+        num_batches_devided_by: int | None = None,
+        vpp_size: int = 1,
+    ):
+        self.model_config = model_config
+        self.test_cases = test_cases
+        self.use_dynamic_bsz_balance = use_dynamic_bsz_balance
+        self.num_batches_devided_by = num_batches_devided_by
+        self.vpp_size = vpp_size
+        
+        self.data = {}
+        self.data_batch_generators = {}
+        for test_case in self.test_cases:
+            batch_size = test_case.batch_size
+            micro_batch_size = test_case.micro_batch_size
+            seqlen = test_case.seqlen
+            max_token_len = test_case.max_token_len
+            shape = test_case.shape
+            system = test_case.system
+            
+            input_ids, attention_mask, position_ids, packed_seq_params = _get_one_model_input_bshd(
+                model_config, batch_size, seqlen, shape, system
+            )
+            batch = TensorDict(
+                {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "position_ids": position_ids,
+                    "packed_seq_params": packed_seq_params,
+                },
+                batch_size=batch_size,
+                device=torch.cuda.current_device(),
+            )
+            if shape == "bshd":
+                micro_batches = batch.split(micro_batch_size)
+                self.data[(batch_size, seqlen, max_token_len)] = micro_batches
+            else:
+                assert shape == "thd", f"shape {shape} not supported"
+                micro_batches, _ = rearrange_micro_batches(
+                    batch,
+                    max_token_len=max_token_len,
+                    num_batches_devided_by=self.num_batches_devided_by,
+                    use_dynamic_bsz_balance=self.use_dynamic_bsz_balance,
+                )
+                self.data[(batch_size, seqlen, max_token_len)] = micro_batches
+            self.data_batch_generators[(batch_size, seqlen, max_token_len)] = make_batch_generator(
+                self.data[(batch_size, seqlen, max_token_len)], vpp_size=self.vpp_size
+            )
+
+    def get_batch_generator(self, batch_size: int, seqlen: int, max_token_len: int | None):
+        return self.data_batch_generators[(batch_size, seqlen, max_token_len)]

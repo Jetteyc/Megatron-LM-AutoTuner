@@ -21,7 +21,14 @@ def init_distributed_single_node():
     model_parallel_cuda_manual_seed(0)
 
 
-def init_distributed_multi_nodes(tp=1, cp=1, ep=1, etp=None, pp=1, vpp=None):
+def init_distributed_multi_nodes(
+    tp: int = 1,
+    cp: int = 1,
+    ep: int = 1,
+    etp: int | None = None,
+    pp: int = 1,
+    vpp: int | None = None
+) -> None:
     """Initialize distributed environment"""
     torch.distributed.init_process_group("nccl")
     torch.cuda.set_device(torch.distributed.get_rank())

@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import torch
 from megatron.core import tensor_parallel
@@ -79,3 +79,6 @@ class TestLanguageModelEmbedding:
     def run_all_tests(self):
         for case in self.test_cases:
             self.test_one_case(case.batch_size, case.seqlen, case.shape, case.system)
+
+    def get_results(self) -> Tuple[dict, dict]:
+        return self.timing_db, self.memory_db

@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Any, Iterator
 
 import torch
 from megatron.core import tensor_parallel
@@ -7,7 +7,7 @@ from megatron.core.transformer.transformer_config import TransformerConfig
 from transformers import PretrainedConfig
 
 from AutoTunner.utils.memory import MemoryTracker, MemoryTrackerContext
-from AutoTunner.utils.models import get_model_input
+from AutoTunner.utils.models import get_thd_model_input_from_bshd
 from AutoTunner.utils.structs import InputTestCase
 from AutoTunner.utils.timing import Timer, TimerContext
 
@@ -21,7 +21,8 @@ class TestLanguageModelEmbedding:
         self,
         tf_config: TransformerConfig,
         hf_config: PretrainedConfig,
-        test_cases: List[InputTestCase],
+        test_case: InputTestCase,
+        batch_data_generator: List | Iterator,
         scatter_to_sequence_parallel: bool = True,
         tp_group: Optional[torch.distributed.ProcessGroup] = None,
         profile_mode: bool = False,
@@ -41,44 +42,41 @@ class TestLanguageModelEmbedding:
         self.memory_db["weights"].update(
             {self.module_name: memory_tracker_ctx.get_memory_usage()}
         )
-        self.test_cases = test_cases
+        self.test_case = test_case
+        self.batch_data_generator = batch_data_generator
         self.model_config = hf_config
         self.profile_mode = profile_mode
         self.warmup = warmup
 
-    def test_one_case(
-        self, batch_size: int, seqlen: int, shape: Optional[List[int]], system: str
-    ) -> None:
-        input_ids, attention_mask, position_ids, packed_sequence_params = (
-            get_model_input(self.model_config, batch_size, seqlen, shape, system)
-        )
-
+    def run_test(self):
+        batch = next(self.batch_data_generator)
+        batch = batch.to(torch.cuda.current_device())
+        batch = batch.contiguous()
+        input_ids_rmpad, attention_mask, position_ids_rmpad, packed_seq_params = get_thd_model_input_from_bshd(batch)
+        
         if self.profile_mode:
             if self.warmup > 0:
                 for _ in range(self.warmup):
-                    self.embedding(input_ids, position_ids)
-            return self.embedding(input_ids, position_ids)
+                    self.embedding(input_ids_rmpad, position_ids_rmpad)
+            return self.embedding(input_ids_rmpad, position_ids_rmpad)
 
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         if self.warmup > 0:
             for _ in range(self.warmup):
-                self.embedding(input_ids, position_ids)
+                self.embedding(input_ids_rmpad, position_ids_rmpad)
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
-        name = f"{self.module_name} forward batch_size={batch_size} seqlen={seqlen} shape={shape} system={system}"
+        
+        name = f"{self.module_name} forward {self.test_case}"
         with TimerContext(name) as timer_ctx:
-            self.embedding(input_ids, position_ids)
+            self.embedding(input_ids_rmpad, position_ids_rmpad)
         self.timing_db[name] = timer_ctx.result
         self.memory_db["activations"].update(
             {name: self.embedding.get_activation_memory()}
         )
-
-    def run_all_tests(self):
-        for case in self.test_cases:
-            self.test_one_case(case.batch_size, case.seqlen, case.shape, case.system)
 
     def get_results(self) -> Tuple[dict, dict]:
         return self.timing_db, self.memory_db

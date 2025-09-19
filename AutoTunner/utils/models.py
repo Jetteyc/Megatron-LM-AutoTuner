@@ -80,9 +80,37 @@ def get_one_model_input(
             return _get_one_model_input_fsdp_thd(model_config, batch_size, seqlen)
     else:
         return _get_one_model_input_bshd(model_config, batch_size, seqlen)
-        
+
+
+def get_thd_model_input_from_bshd(
+    batch: TensorDict, system: str = "megatron"
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Any]:
+    input_ids = batch["input_ids"]
+    attention_mask = batch["attention_mask"]
+    position_ids = batch["position_ids"]
+    batch_size, seqlen = attention_mask.shape[:2]
+    if system == "megatron":
+        input_ids_rmpad, packed_seq_params = generate_thd_input(
+            input_ids=input_ids, attention_mask=attention_mask
+        )
+        return input_ids_rmpad, attention_mask, position_ids, packed_seq_params
+    elif system == "fsdp":
+        input_ids_rmpad, indices, *_ = unpad_input(input_ids.unsqueeze(-1), attention_mask)
+        input_ids_rmpad = input_ids_rmpad.transpose(0, 1)  # (1, total_nnz)
+        position_ids_rmpad = index_first_axis(
+            rearrange(position_ids.unsqueeze(-1), "b s ... -> (b s) ..."), indices
+        ).transpose(0, 1)
+        return input_ids_rmpad, attention_mask, position_ids_rmpad, None
+    else:
+        raise ValueError(f"system {system} not supported")
+
 
 class DataSet:
+    """
+    For real RLHF training, sequence packing shall use this simulated dataset to prepare inputs.
+    
+    This class prepares sequence balanced data
+    """
     def __init__(
         self,
         model_config: PretrainedConfig,
@@ -118,7 +146,8 @@ class DataSet:
                     "packed_seq_params": packed_seq_params,
                 },
                 batch_size=batch_size,
-                device=torch.cuda.current_device(),
+                # device=torch.cuda.current_device(),
+                device="cpu",
             )
             if shape == "bshd":
                 micro_batches = batch.split(micro_batch_size)

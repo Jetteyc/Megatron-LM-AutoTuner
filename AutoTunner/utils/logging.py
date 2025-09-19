@@ -1,9 +1,11 @@
 import logging
 import os
+
 import torch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def set_logging_level(level):
     logger.setLevel(level)

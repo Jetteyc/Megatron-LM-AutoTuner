@@ -1,8 +1,6 @@
 #!/bin/bash
 
 DIR_LIST=(
-    testbench
-    utils
     AutoTunner
 )
 

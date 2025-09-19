@@ -1,9 +1,11 @@
+from typing import Any, Tuple
+
 import torch
 from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
 from transformers import PretrainedConfig
 
 from verl.utils.model import compute_position_id_with_mask, create_random_mask
-from typing import Tuple, Any
+
 from .pack_sequence import generate_thd_input
 
 """
@@ -60,7 +62,11 @@ def _get_model_input_megatron_thd(
 
 
 def get_model_input(
-    model_config: PretrainedConfig, batch_size: int, seqlen: int, shape: str, system: str = "megatron"
+    model_config: PretrainedConfig,
+    batch_size: int,
+    seqlen: int,
+    shape: str,
+    system: str = "megatron",
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Any]:
     if shape == "thd":
         if system == "megatron":

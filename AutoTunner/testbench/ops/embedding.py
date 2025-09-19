@@ -1,18 +1,21 @@
-import torch
-from torch import Tensor
-
 from typing import Optional
+
+import torch
+from megatron.core import tensor_parallel
+from megatron.core.models.common.embeddings.language_model_embedding import (
+    LanguageModelEmbedding,
+)
+from megatron.core.transformer.transformer_config import TransformerConfig
+from torch import Tensor
 from transformers import PretrainedConfig
 
-from megatron.core import tensor_parallel
-from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.core.models.common.embeddings.language_model_embedding import LanguageModelEmbedding
-
+from AutoTunner.utils.memory import ActivationHook, MemoryTracker
 from AutoTunner.utils.nvtx import nvtx_decorator, nvtx_range_pop, nvtx_range_push
-from AutoTunner.utils.memory import MemoryTracker, ActivationHook
-# from AutoTunner.utils.timing import Timer
 
 from .common import CommonOpsForTest
+
+# from AutoTunner.utils.timing import Timer
+
 
 class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
     def __init__(
@@ -27,7 +30,7 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
             config=tf_config,
             vocab_size=hf_config.vocab_size,
             max_sequence_length=hf_config.max_position_embeddings,
-            position_embedding_type='learned_absolute',
+            position_embedding_type="learned_absolute",
             num_tokentypes=0,
             scatter_to_sequence_parallel=scatter_to_sequence_parallel,
             tp_group=tp_group,
@@ -41,7 +44,9 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
     # @MemoryTracker.track_decorator()
     # @Timer.time_decorator()
     @nvtx_decorator(message="LanguageModelEmbedding forward")
-    def _forward(self, input_ids: Tensor, position_ids: Tensor, tokentype_ids: int=None) -> Tensor:
+    def _forward(
+        self, input_ids: Tensor, position_ids: Tensor, tokentype_ids: int = None
+    ) -> Tensor:
         """Forward pass of the embedding module.
 
         Args:
@@ -69,7 +74,9 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
         if tokentype_ids is not None:
             assert self.tokentype_embeddings is not None
             # [b s h] -> [s b h] (So that it can be added with embeddings)
-            tokentype_embedding = self.tokentype_embeddings(tokentype_ids).permute(1, 0, 2)
+            tokentype_embedding = self.tokentype_embeddings(tokentype_ids).permute(
+                1, 0, 2
+            )
             embeddings = embeddings + tokentype_embedding
         else:
             assert self.tokentype_embeddings is None
@@ -88,7 +95,10 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
             # `scatter_to_sequence_parallel_region` returns a view, which prevents
             # the original tensor from being garbage collected. Clone to facilitate GC.
             # Has a small runtime cost (~0.5%).
-            if self.config.clone_scatter_output_in_embedding and self.scatter_to_sequence_parallel:
+            if (
+                self.config.clone_scatter_output_in_embedding
+                and self.scatter_to_sequence_parallel
+            ):
                 embeddings = embeddings.clone()
             with tensor_parallel.get_cuda_rng_tracker().fork():
                 embeddings = self.embedding_dropout(embeddings)
@@ -99,9 +109,13 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
             nvtx_range_pop(suffix="dropout")
 
         return embeddings
-    
-    def forward(self, input_ids: Tensor, position_ids: Tensor, tokentype_ids: int=None) -> Tensor:
+
+    def forward(
+        self, input_ids: Tensor, position_ids: Tensor, tokentype_ids: int = None
+    ) -> Tensor:
         self.activation_hook.clear()
-        with torch.autograd.graph.saved_tensors_hooks(self.activation_hook.save_hook, self.activation_hook.load_hook):
+        with torch.autograd.graph.saved_tensors_hooks(
+            self.activation_hook.save_hook, self.activation_hook.load_hook
+        ):
             ret = self._forward(input_ids, position_ids, tokentype_ids)
         return ret

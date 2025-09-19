@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Tuple
 
+
 @dataclass
 class InputTestCase:
     batch_size: int

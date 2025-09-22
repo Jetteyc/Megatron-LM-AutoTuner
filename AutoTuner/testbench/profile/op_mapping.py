@@ -2,5 +2,5 @@ from AutoTuner.testbench.ops_test.embedding_test import TestLanguageModelEmbeddi
 
 
 OP_TEST_MAPPING = {
-    "embedding": TestLanguageModelEmbedding,
+    "Embedding": TestLanguageModelEmbedding,
 }

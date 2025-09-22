@@ -105,7 +105,7 @@ def get_thd_model_input_from_bshd(
         raise ValueError(f"system {system} not supported")
 
 
-class DataSet:
+class DataSets:
     """
     For real RLHF training, sequence packing shall use this simulated dataset to prepare inputs.
     
@@ -116,13 +116,11 @@ class DataSet:
         model_config: PretrainedConfig,
         test_cases: list[InputTestCase],
         use_dynamic_bsz_balance: bool = True,
-        num_batches_devided_by: int | None = None,
-        vpp_size: int = 1,
+        vpp_size: int | None = None,
     ):
         self.model_config = model_config
         self.test_cases = test_cases
         self.use_dynamic_bsz_balance = use_dynamic_bsz_balance
-        self.num_batches_devided_by = num_batches_devided_by
         self.vpp_size = vpp_size
         
         self.data = {}
@@ -157,7 +155,7 @@ class DataSet:
                 micro_batches, _ = rearrange_micro_batches(
                     batch,
                     max_token_len=max_token_len,
-                    num_batches_devided_by=self.num_batches_devided_by,
+                    num_batches_devided_by=self.vpp_size,
                     use_dynamic_bsz_balance=self.use_dynamic_bsz_balance,
                 )
                 self.data[(batch_size, seqlen, max_token_len)] = micro_batches

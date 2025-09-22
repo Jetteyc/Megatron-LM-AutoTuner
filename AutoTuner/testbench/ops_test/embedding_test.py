@@ -10,6 +10,7 @@ from AutoTuner.utils.memory import MemoryTracker, MemoryTrackerContext
 from AutoTuner.utils.model_inputs import get_thd_model_input_from_bshd
 from AutoTuner.utils.structs import InputTestCase
 from AutoTuner.utils.timing import Timer, TimerContext
+from AutoTuner.utils.nested_dict import NestedDict
 
 from ..ops.embedding import LanguageModelEmbeddingForTest
 
@@ -24,7 +25,7 @@ class TestLanguageModelEmbedding:
         scatter_to_sequence_parallel: bool = True,
         tp_group: Optional[torch.distributed.ProcessGroup] = None,
         profile_mode: bool = False,
-        warmup: int = 2,
+        warmup_iters: int = 2,
     ):
         with MemoryTrackerContext("Embedding init") as memory_tracker_ctx:
             self.embedding = LanguageModelEmbeddingForTest(
@@ -35,14 +36,48 @@ class TestLanguageModelEmbedding:
                 hook_activation=not profile_mode,
             )
         self.module_name = "Embedding"
-        self.timing_db = {}
-        self.memory_db = {"weights": {}, "activations": {}}
-        self.memory_db["weights"].update(
-            {self.module_name: memory_tracker_ctx.get_memory_usage()}
-        )
+        
+        """
+        timing_db structure:
+        {
+            "Embedding":
+            {
+                "forward":
+                {
+                    InputTestCase(batch_size=..., micro_batch_size=..., seqlen=..., max_token_len=..., shape='thd', system='megatron') : time_in_seconds,
+                    ...
+                },
+                "backward":
+                {
+                    InputTestCase(batch_size=..., micro_batch_size=..., seqlen=..., max_token_len=..., shape='thd', system='megatron') : time_in_seconds,
+                    ...
+                }
+            },
+            ...
+        }
+        """
+        """memory_db structure:
+        {
+            "weights": {
+                "Embedding": memory_in_bytes,
+                ...
+            },
+            "activations": {
+                "Embedding":
+                {
+                    InputTestCase(batch_size=..., micro_batch_size=..., seqlen=..., max_token_len=..., shape='thd', system='megatron'): memory_in_bytes,
+                    ...
+                },
+                ...
+            }
+        }
+        """
+        self.timing_db = NestedDict()
+        self.memory_db = {"weights": {}, "activations": NestedDict()}
+        self.memory_db["weights"][self.module_name] = memory_tracker_ctx.get_memory_usage()
         self.model_config = hf_config
         self.profile_mode = profile_mode
-        self.warmup = warmup
+        self.warmup_iters = warmup_iters
 
     def run_test(self, test_case: InputTestCase, batch_data_generator: Iterator):
         batch = next(batch_data_generator)
@@ -51,16 +86,16 @@ class TestLanguageModelEmbedding:
         input_ids_rmpad, attention_mask, position_ids_rmpad, packed_seq_params = get_thd_model_input_from_bshd(batch)
         
         if self.profile_mode:
-            if self.warmup > 0:
-                for _ in range(self.warmup):
+            if self.warmup_iters > 0:
+                for _ in range(self.warmup_iters):
                     self.embedding(input_ids_rmpad, position_ids_rmpad)
             return self.embedding(input_ids_rmpad, position_ids_rmpad)
 
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
-        if self.warmup > 0:
-            for _ in range(self.warmup):
+        if self.warmup_iters > 0:
+            for _ in range(self.warmup_iters):
                 self.embedding(input_ids_rmpad, position_ids_rmpad)
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
@@ -69,10 +104,8 @@ class TestLanguageModelEmbedding:
         name = f"{self.module_name} forward {test_case}"
         with TimerContext(name) as timer_ctx:
             self.embedding(input_ids_rmpad, position_ids_rmpad)
-        self.timing_db[name] = timer_ctx.result
-        self.memory_db["activations"].update(
-            {name: self.embedding.get_activation_memory()}
-        )
+        self.timing_db[self.module_name]["forward"][test_case] = timer_ctx.result
+        self.memory_db["activations"][self.module_name][test_case] = self.embedding.get_activation_memory()
 
     def get_results(self) -> Tuple[dict, dict]:
         return self.timing_db, self.memory_db

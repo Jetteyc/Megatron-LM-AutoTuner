@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any, Tuple
 
+from .nested_dict import nested_dict
+
 
 @dataclass
 class InputTestCase:
@@ -13,3 +15,6 @@ class InputTestCase:
     
     def __str__(self):
         return f"batch_size={self.batch_size}, micro_batch_size={self.micro_batch_size}, seqlen={self.seqlen}, max_token_len={self.max_token_len}, shape={self.shape}, system={self.system}"
+    
+    def __hash__(self):
+        return hash((self.batch_size, self.micro_batch_size, self.seqlen, self.max_token_len, self.shape, self.system))

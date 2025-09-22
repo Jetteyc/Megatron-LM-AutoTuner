@@ -1,6 +1,6 @@
 import logging
 
-from AutoTunner.utils.memory import ActivationHook, MemoryTracker
+from AutoTuner.utils.memory import ActivationHook, MemoryTracker
 
 
 class CommonOpsForTest:

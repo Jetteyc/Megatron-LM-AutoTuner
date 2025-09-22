@@ -6,10 +6,10 @@ from megatron.core import tensor_parallel
 from megatron.core.transformer.transformer_config import TransformerConfig
 from transformers import PretrainedConfig
 
-from AutoTunner.utils.memory import MemoryTracker, MemoryTrackerContext
-from AutoTunner.utils.models import get_thd_model_input_from_bshd
-from AutoTunner.utils.structs import InputTestCase
-from AutoTunner.utils.timing import Timer, TimerContext
+from AutoTuner.utils.memory import MemoryTracker, MemoryTrackerContext
+from AutoTuner.utils.model_inputs import get_thd_model_input_from_bshd
+from AutoTuner.utils.structs import InputTestCase
+from AutoTuner.utils.timing import Timer, TimerContext
 
 from ..ops.embedding import LanguageModelEmbeddingForTest
 
@@ -21,8 +21,6 @@ class TestLanguageModelEmbedding:
         self,
         tf_config: TransformerConfig,
         hf_config: PretrainedConfig,
-        test_case: InputTestCase,
-        batch_data_generator: List | Iterator,
         scatter_to_sequence_parallel: bool = True,
         tp_group: Optional[torch.distributed.ProcessGroup] = None,
         profile_mode: bool = False,
@@ -42,14 +40,12 @@ class TestLanguageModelEmbedding:
         self.memory_db["weights"].update(
             {self.module_name: memory_tracker_ctx.get_memory_usage()}
         )
-        self.test_case = test_case
-        self.batch_data_generator = batch_data_generator
         self.model_config = hf_config
         self.profile_mode = profile_mode
         self.warmup = warmup
 
-    def run_test(self):
-        batch = next(self.batch_data_generator)
+    def run_test(self, test_case: InputTestCase, batch_data_generator: Iterator):
+        batch = next(batch_data_generator)
         batch = batch.to(torch.cuda.current_device())
         batch = batch.contiguous()
         input_ids_rmpad, attention_mask, position_ids_rmpad, packed_seq_params = get_thd_model_input_from_bshd(batch)
@@ -70,7 +66,7 @@ class TestLanguageModelEmbedding:
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         
-        name = f"{self.module_name} forward {self.test_case}"
+        name = f"{self.module_name} forward {test_case}"
         with TimerContext(name) as timer_ctx:
             self.embedding(input_ids_rmpad, position_ids_rmpad)
         self.timing_db[name] = timer_ctx.result

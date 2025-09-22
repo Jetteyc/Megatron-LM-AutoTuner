@@ -9,8 +9,8 @@ from megatron.core.transformer.transformer_config import TransformerConfig
 from torch import Tensor
 from transformers import PretrainedConfig
 
-from AutoTunner.utils.memory import ActivationHook, MemoryTracker
-from AutoTunner.utils.nvtx import nvtx_decorator, nvtx_range_pop, nvtx_range_push
+from AutoTuner.utils.memory import ActivationHook, MemoryTracker
+from AutoTuner.utils.nvtx import nvtx_decorator, nvtx_range_pop, nvtx_range_push
 
 from .common import CommonOpsForTest
 

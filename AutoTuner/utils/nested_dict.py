@@ -1,7 +1,9 @@
 from collections import defaultdict
 
+
 def nested_dict():
     return defaultdict(nested_dict)
+
 
 class NestedDict(dict):
     """A dict-like object that auto-creates nested dicts and supports merge."""
@@ -25,4 +27,7 @@ class NestedDict(dict):
 
     def to_dict(self):
         """Convert NestedDict into a normal dict recursively."""
-        return {k: (v.to_dict() if isinstance(v, NestedDict) else v) for k, v in self.items()}
+        return {
+            k: (v.to_dict() if isinstance(v, NestedDict) else v)
+            for k, v in self.items()
+        }

@@ -1,14 +1,14 @@
 from typing import Any, Tuple
 
 import tensordict
-from tensordict import TensorDict
 import torch
 from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
+from tensordict import TensorDict
 from transformers import PretrainedConfig
 
+from verl.utils.megatron.pipeline_parallel import make_batch_generator
 from verl.utils.model import compute_position_id_with_mask, create_random_mask
 from verl.utils.seqlen_balancing import rearrange_micro_batches
-from verl.utils.megatron.pipeline_parallel import make_batch_generator
 
 from .pack_sequence import generate_thd_input
 from .structs import InputTestCase
@@ -95,7 +95,9 @@ def get_thd_model_input_from_bshd(
         )
         return input_ids_rmpad, attention_mask, position_ids, packed_seq_params
     elif system == "fsdp":
-        input_ids_rmpad, indices, *_ = unpad_input(input_ids.unsqueeze(-1), attention_mask)
+        input_ids_rmpad, indices, *_ = unpad_input(
+            input_ids.unsqueeze(-1), attention_mask
+        )
         input_ids_rmpad = input_ids_rmpad.transpose(0, 1)  # (1, total_nnz)
         position_ids_rmpad = index_first_axis(
             rearrange(position_ids.unsqueeze(-1), "b s ... -> (b s) ..."), indices
@@ -108,9 +110,10 @@ def get_thd_model_input_from_bshd(
 class DataSets:
     """
     For real RLHF training, sequence packing shall use this simulated dataset to prepare inputs.
-    
+
     This class prepares sequence balanced data
     """
+
     def __init__(
         self,
         model_config: PretrainedConfig,
@@ -122,7 +125,7 @@ class DataSets:
         self.test_cases = test_cases
         self.use_dynamic_bsz_balance = use_dynamic_bsz_balance
         self.vpp_size = vpp_size
-        
+
         self.data = {}
         self.data_batch_generators = {}
         for test_case in self.test_cases:
@@ -132,9 +135,11 @@ class DataSets:
             max_token_len = test_case.max_token_len
             shape = test_case.shape
             system = test_case.system
-            
-            input_ids, attention_mask, position_ids, packed_seq_params = _get_one_model_input_bshd(
-                model_config, batch_size, seqlen, shape, system
+
+            input_ids, attention_mask, position_ids, packed_seq_params = (
+                _get_one_model_input_bshd(
+                    model_config, batch_size, seqlen, shape, system
+                )
             )
             batch = TensorDict(
                 {
@@ -159,9 +164,14 @@ class DataSets:
                     use_dynamic_bsz_balance=self.use_dynamic_bsz_balance,
                 )
                 self.data[(batch_size, seqlen, max_token_len)] = micro_batches
-            self.data_batch_generators[(batch_size, seqlen, max_token_len)] = make_batch_generator(
-                self.data[(batch_size, seqlen, max_token_len)], vpp_size=self.vpp_size
+            self.data_batch_generators[(batch_size, seqlen, max_token_len)] = (
+                make_batch_generator(
+                    self.data[(batch_size, seqlen, max_token_len)],
+                    vpp_size=self.vpp_size,
+                )
             )
 
-    def get_batch_generator(self, batch_size: int, seqlen: int, max_token_len: int | None):
+    def get_batch_generator(
+        self, batch_size: int, seqlen: int, max_token_len: int | None
+    ):
         return self.data_batch_generators[(batch_size, seqlen, max_token_len)]

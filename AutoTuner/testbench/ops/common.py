@@ -1,9 +1,11 @@
+import abc
 import logging
+from abc import ABC
 
 from AutoTuner.utils.memory import ActivationHook, MemoryTracker
 
 
-class CommonOpsForTest:
+class CommonOpsForTest(ABC):
     def __init__(
         self,
         hook_activation: bool = False,

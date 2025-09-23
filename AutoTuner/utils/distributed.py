@@ -27,7 +27,7 @@ def init_distributed_multi_nodes(
     ep: int = 1,
     etp: int | None = None,
     pp: int = 1,
-    vpp: int | None = None
+    vpp: int | None = None,
 ) -> None:
     """Initialize distributed environment"""
     torch.distributed.init_process_group("nccl")

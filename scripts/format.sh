@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DIR_LIST=(
-    AutoTunner
+    AutoTuner
 )
 
 for dir in "${DIR_LIST[@]}"; do

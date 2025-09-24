@@ -5,6 +5,7 @@ from typing import List
 
 from AutoTuner.utils.nvtx import enable_nvtx_profiling
 from AutoTuner.utils.structs import InputTestCase
+from AutoTuner.utils.distributed import init_distributed_multi_nodes
 
 from .configs.config_struct import ProfileConfig
 from .launcher.get_data_launch import LaunchDataCollectionForOps
@@ -29,7 +30,58 @@ def validate_args(args):
         args.real_override_tf_config_file
     ), f"{args.real_override_tf_config_file} not found"
 
+    # Validate distributed
+    assert os.environ.get("WORLD_SIZE") is not None, "WORLD_SIZE is not set"
+    assert os.environ.get("RANK") is not None, "RANK is not set"
+    assert os.environ.get("LOCAL_RANK") is not None, "LOCAL_RANK is not set"
+
     return args
+
+
+def parse_distributed_args(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "--tensor-model-parallel-size",
+        type=int,
+        required=False,
+        default=1,
+        help="tp size of megatron",
+    )
+    parser.add_argument(
+        "--pipeline-model-parallel-size",
+        type=int,
+        required=False,
+        default=1,
+        help="pp size of megatron",
+    )
+    parser.add_argument(
+        "--virtual-pipeline-model-parallel-size",
+        type=int,
+        required=False,
+        default=None,
+        help="vpp size of megatron",
+    )
+    parser.add_argument(
+        "--context-parallel-size",
+        type=int,
+        required=False,
+        default=1,
+        help="cp size of megatron",
+    )
+    parser.add_argument(
+        "--expert-parallel-size",
+        type=int,
+        required=False,
+        default=1,
+        help="ep size of megatron",
+    )
+    parser.add_argument(
+        "--expert-tensor-parallel-size",
+        type=int,
+        required=False,
+        default=1,
+        help="etp size of megatron",
+    )
+    return parser
 
 
 def parse_args():
@@ -41,6 +93,7 @@ def parse_args():
         default="Qwen/Qwen3-0.6B",
         help="model name to test",
     )
+    # File and directories
     parser.add_argument(
         "--test_cases-dir",
         type=str,
@@ -84,6 +137,7 @@ def parse_args():
         help="profile config file",
     )
 
+    # Profile configs
     parser.add_argument(
         "--profile-mode",
         action="store_true",
@@ -97,9 +151,11 @@ def parse_args():
         help="warmup op iterations",
     )
 
+    # test choices for flexibility
     parser.add_argument("--test-ops-list", type=int, nargs="+", default=None)
     parser.add_argument("--test-case-idxs", type=int, nargs="+", default=None)
 
+    # output
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -107,6 +163,9 @@ def parse_args():
         default="outputs",
         help="output directory to save the database results and nsys profile results, actual output_dir is args.output_dir/model_name/profile_mode",
     )
+    
+    # distributed
+    parser = parse_distributed_args(parser)
     args = parser.parse_args()
     args = validate_args(args)
     return args
@@ -179,6 +238,14 @@ def call_launcher(
 
 if __name__ == "main":
     args = parse_args()
+    init_distributed_multi_nodes(
+        tp=args.tensor_model_parallel_size,
+        pp=args.pipeline_model_parallel_size,
+        vpp=args.virtual_pipeline_model_parallel_size,
+        cp=args.context_parallel_size,
+        ep=args.expert_parallel_size,
+        etp=args.expert_tensor_parallel_size,
+    )
     test_cases = handle_test_cases(args)
     profile_config = handle_profile_configs(args)
     override_model_config = handle_model_config(args)

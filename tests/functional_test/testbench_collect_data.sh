@@ -13,8 +13,33 @@ TEST_CASE_IDXES=None
 TIMESTAMP_VAR=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR=outputs/$(TIMESTAMP_VAR)
 
+export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-ARGS=(
+GPUS_PER_NODE=8
+# Change for multinode config
+MASTER_ADDR=localhost
+MASTER_PORT=6000
+NUM_NODES=1
+NODE_RANK=0
+WORLD_SIZE=$(($GPUS_PER_NODE*$NUM_NODES))
+
+DISTRIBUTED_ARGS=(
+    --nproc_per_node $GPUS_PER_NODE 
+    --nnodes $NUM_NODES 
+    --master_addr $MASTER_ADDR 
+    --master_port $MASTER_PORT
+)
+
+PARALLEL_ARGS=(
+    --tensor-model-parallel-size 1
+    --pipeline-model-parallel-size 1
+    --virtual-pipeline-model-parallel-size 1
+    --context-parallel-size 1
+    --expert-parallel-size 1
+    --expert-tensor-parallel-size 1
+)
+
+PROFILE_ARGS=(
     --model-name $MODEL_NAME
     --test-cases-file $TEST_CASES_FILE
     --test-ops-list $TEST_OPS_LIST
@@ -22,5 +47,7 @@ ARGS=(
     --output-dir $OUTPUT_DIR
 )
 
-python3 -m AutoTuner.testbench.nsys_main \
-    ${ARGS[@]} \
+nsys profile "${NSYS_ARGS[@]}" \
+    torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.main \
+        ${PROFILE_ARGS[@]} \
+        ${PARALLEL_ARGS[@]}

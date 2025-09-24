@@ -1,3 +1,6 @@
+import warnings
+warnings.warn("Deprecared! Only support single node, use scripts instead!", DeprecationWarning, stacklevel=2)
+
 import os
 import subprocess
 from collections import defaultdict
@@ -11,6 +14,7 @@ from AutoTuner.utils.config import (
 from AutoTuner.utils.model_inputs import DataSets
 from AutoTuner.utils.nested_dict import NestedDict
 from AutoTuner.utils.structs import InputTestCase
+from AutoTuner.utils.distributed import init_distributed_single_node
 
 from .configs.config_struct import ProfileConfig
 from .main import parse_args
@@ -68,6 +72,7 @@ class NsysLauncher:
         )
 
         self.timeout = timeout
+        init_distributed_single_node()
 
     def run_nsys_profile(self):
         process = subprocess.Popen(self.command, shell=True, env=self.environ)

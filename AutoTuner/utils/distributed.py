@@ -31,9 +31,10 @@ def init_distributed_multi_nodes(
 ) -> None:
     """Initialize distributed environment"""
     torch.distributed.init_process_group("nccl")
-    torch.cuda.set_device(torch.distributed.get_rank())
+    torch.cuda.set_device(os.environ["LOCAL_RANK"])
     if pp <= 1:
-        vpp = None
+        # check megatron arguments.py
+        assert vpp is None, "vpp must be None when pp <= 1"
     mpu.initialize_model_parallel(
         tensor_model_parallel_size=tp,
         pipeline_model_parallel_size=pp,

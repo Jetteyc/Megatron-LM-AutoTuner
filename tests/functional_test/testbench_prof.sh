@@ -12,9 +12,27 @@ TEST_CASE_IDXES=None
 
 TIMESTAMP_VAR=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR=outputs/$(TIMESTAMP_VAR)
+SINGLE_NODES=${1:-False}
 
+export NVTE_NVTX_ENABLED=1
+export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-ARGS=(
+GPUS_PER_NODE=8
+# Change for multinode config
+MASTER_ADDR=localhost
+MASTER_PORT=6000
+NUM_NODES=1
+NODE_RANK=0
+WORLD_SIZE=$(($GPUS_PER_NODE*$NUM_NODES))
+
+DISTRIBUTED_ARGS=(
+    --nproc_per_node $GPUS_PER_NODE 
+    --nnodes $NUM_NODES 
+    --master_addr $MASTER_ADDR 
+    --master_port $MASTER_PORT
+)
+
+PROFILE_ARGS=(
     --model-name $MODEL_NAME
     --test-cases-file $TEST_CASES_FILE
     --test-ops-list $TEST_OPS_LIST
@@ -23,5 +41,38 @@ ARGS=(
     --output-dir $OUTPUT_DIR
 )
 
-python3 -m AutoTuner.testbench.nsys_main \
-    ${ARGS[@]} \
+PARALLEL_ARGS=(
+    --tensor-model-parallel-size 1
+    --pipeline-model-parallel-size 1
+    --virtual-pipeline-model-parallel-size 1
+    --context-parallel-size 1
+    --expert-parallel-size 1
+    --expert-tensor-parallel-size 1
+)
+
+NSYS_ARGS=(
+    -w true
+    -o "${OUTPUT_DIR}/${MODEL_NAME}/nsight_report"
+    -f true
+    -x true
+    -t cuda,nvtx,cudnn,cublas,python-gil
+    --capture-range=cudaProfilerApi
+    --capture-range-end=stop
+    --cudabacktrace=all
+    --cuda-memory-usage=true
+    --python-backtrace=cuda
+    --enable network_interface
+    --python-sampling=true
+)
+
+if [ "$SINGLE_NODES" = "True" ]; then
+    python3 -m AutoTuner.testbench.nsys_main \
+        ${PROFILE_ARGS[@]}
+    exit $?
+else
+    nsys profile "${NSYS_ARGS[@]}" \
+        torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.main \
+            ${PROFILE_ARGS[@]} \
+            ${PARALLEL_ARGS[@]}
+    exit $?
+fi

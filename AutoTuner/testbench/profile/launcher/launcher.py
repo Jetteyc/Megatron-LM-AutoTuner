@@ -8,6 +8,8 @@ from AutoTuner.utils.config import (
     get_mcore_model_config_from_hf_config,
 )
 from AutoTuner.utils.model_inputs import DataSets
+import torch
+
 from AutoTuner.utils.nested_dict import NestedDict
 from AutoTuner.utils.structs import InputTestCase
 
@@ -30,6 +32,7 @@ class Launcher:
         self.tf_config = get_mcore_model_config_from_hf_config(
             self.hf_config, **override_tf_config_kwargs
         )
+        assert torch.distributed.is_initialized(), f"torch distributed shall be initialized"
         self.tp_group = mpu.get_tensor_model_parallel_group()
         self.test_cases = test_cases
         self.datasets = DataSets(

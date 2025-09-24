@@ -1,0 +1,27 @@
+[project]
+name = "Megatron-LM-AutoTuner"
+version = "0.0.1"
+description = "Megatron-LM-AutoTuner: An Automated Performance Tuning Framework for LLM PreTraining and PostTraining"
+authors = [
+    { name = "Gao Ziyuan", email = "gaoziyuan19@mails.ucas.ac.cn" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["AutoTuner*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"

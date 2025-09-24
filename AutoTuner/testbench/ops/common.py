@@ -2,7 +2,7 @@ import abc
 import logging
 from abc import ABC
 
-from AutoTuner.utils.memory import ActivationHook, MemoryTracker
+from AutoTuner.utils.memory import ActivationHook, MemoryTracker, get_memory_str
 
 
 class CommonOpsForTest(ABC):
@@ -18,4 +18,4 @@ class CommonOpsForTest(ABC):
         self.activation_tensors = []
 
     def get_activation_memory(self) -> int:
-        return self.activation_hook.get_activation_memory()
+        return get_memory_str(self.activation_hook.get_activation_memory(), human_readable=True)

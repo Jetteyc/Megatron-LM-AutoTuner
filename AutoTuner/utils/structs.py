@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Tuple
 
-from .nested_dict import nested_dict
+from .nested_dict import NestedDict
 
 
 @dataclass
@@ -27,3 +27,28 @@ class InputTestCase:
                 self.system,
             )
         )
+
+    def set_nested_dict(self, nested_dict: NestedDict, value: Any) -> NestedDict:
+        """
+        Set the value in the nested_dict according to the attributes of the InputTestCase.
+
+        Args:
+            nested_dict (NestedDict): The NestedDict to set the value in.
+            value (Any): The value to set.
+        Returns:
+            NestedDict: The updated NestedDict.
+        """
+        nested_dict[
+            f"batch_size={self.batch_size}"
+        ][
+            f"micro_batch_size={self.micro_batch_size}"
+        ][
+            f"seqlen={self.seqlen}"
+        ][
+            f"max_token_len={self.max_token_len}"
+        ][
+            f"shape={self.shape}"
+        ][
+            f"system={self.system}"
+        ] = value
+        return nested_dict

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source .secrets/env.sh
+
 MEGATRON_LM_HASH=$(git -C "Megatron-LM" rev-parse --short=6 HEAD)
 TRANSFORMER_ENGINE_HASH=$(git -C "TransformerEngine" rev-parse --short=6 HEAD)
 VERL_HASH=$(git -C "verl" rev-parse --short=6 HEAD)
@@ -17,7 +19,7 @@ SINGLE_NODES=${1:-False}
 export NVTE_NVTX_ENABLED=1
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-GPUS_PER_NODE=8
+GPUS_PER_NODE=4
 # Change for multinode config
 MASTER_ADDR=localhost
 MASTER_PORT=6000
@@ -35,16 +37,22 @@ DISTRIBUTED_ARGS=(
 PROFILE_ARGS=(
     --model-name $MODEL_NAME
     --test-cases-file $TEST_CASES_FILE
-    --test-ops-list $TEST_OPS_LIST
-    --test-case-idxes $TEST_CASE_IDXES
     --profile-mode
     --output-dir $OUTPUT_DIR
 )
 
+OPTIONAL_PROFILE_ARGS=()
+if [[ "${TEST_OPS_LIST}" != "None" ]]; then
+    OPTIONAL_PROFILE_ARGS+=(--test-ops-list ${TEST_OPS_LIST})
+fi
+if [[ "${TEST_CASE_IDXES}" != "None" ]]; then
+    OPTIONAL_PROFILE_ARGS+=(--test-case-idxes ${TEST_CASE_IDXES})
+fi
+
 PARALLEL_ARGS=(
     --tensor-model-parallel-size 1
     --pipeline-model-parallel-size 1
-    --virtual-pipeline-model-parallel-size 1
+    --virtual-pipeline-model-parallel-size None
     --context-parallel-size 1
     --expert-parallel-size 1
     --expert-tensor-parallel-size 1
@@ -66,13 +74,14 @@ NSYS_ARGS=(
 )
 
 if [ "$SINGLE_NODES" = "True" ]; then
-    python3 -m AutoTuner.testbench.nsys_main \
+    python3 -m AutoTuner.testbench.profile.nsys_main \
         ${PROFILE_ARGS[@]}
     exit $?
 else
     nsys profile "${NSYS_ARGS[@]}" \
-        torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.main \
+        torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.profile.main \
             ${PROFILE_ARGS[@]} \
+            ${OPTIONAL_PROFILE_ARGS[@]} \
             ${PARALLEL_ARGS[@]}
     exit $?
 fi

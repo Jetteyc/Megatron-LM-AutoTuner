@@ -32,9 +32,9 @@ def _get_one_model_input_bshd(
     )
     attention_mask = create_random_mask(
         input_ids=input_ids,
-        max_ratio_of_left_padding=0.1,
-        max_ratio_of_valid_token=0.8,
-        min_ratio_of_valid_token=0.5,
+        max_ratio_of_left_padding=0,
+        max_ratio_of_valid_token=0.9,
+        min_ratio_of_valid_token=0.8,
     )
     position_ids = compute_position_id_with_mask(attention_mask)
     return input_ids, attention_mask, position_ids, None
@@ -87,6 +87,7 @@ def get_thd_model_input_from_bshd(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Any]:
     input_ids = batch["input_ids"]
     attention_mask = batch["attention_mask"]
+    attention_mask = attention_mask.to(bool)
     position_ids = batch["position_ids"]
     batch_size, seqlen = attention_mask.shape[:2]
     if system == "megatron":
@@ -138,7 +139,7 @@ class DataSets:
 
             input_ids, attention_mask, position_ids, packed_seq_params = (
                 _get_one_model_input_bshd(
-                    model_config, batch_size, seqlen, shape, system
+                    model_config, batch_size, seqlen
                 )
             )
             batch = TensorDict(
@@ -160,14 +161,15 @@ class DataSets:
                 micro_batches, _ = rearrange_micro_batches(
                     batch,
                     max_token_len=max_token_len,
-                    num_batches_devided_by=self.vpp_size,
+                    num_batches_divided_by=self.vpp_size,
                     use_dynamic_bsz_balance=self.use_dynamic_bsz_balance,
+                    same_micro_num_in_dp=False,
                 )
                 self.data[(batch_size, seqlen, max_token_len)] = micro_batches
             self.data_batch_generators[(batch_size, seqlen, max_token_len)] = (
                 make_batch_generator(
                     self.data[(batch_size, seqlen, max_token_len)],
-                    vpp_size=self.vpp_size,
+                    vpp_size=self.vpp_size if self.vpp_size is not None else 1,
                 )
             )
 

@@ -31,7 +31,7 @@ def init_distributed_multi_nodes(
 ) -> None:
     """Initialize distributed environment"""
     torch.distributed.init_process_group("nccl")
-    torch.cuda.set_device(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(torch.device(int(os.environ["LOCAL_RANK"])))
     if pp <= 1:
         # check megatron arguments.py
         assert vpp is None, "vpp must be None when pp <= 1"
@@ -44,3 +44,8 @@ def init_distributed_multi_nodes(
         expert_tensor_parallel_size=etp,
     )
     model_parallel_cuda_manual_seed(0)
+
+
+def destroy_distributed():
+    """Destroy distributed environment"""
+    torch.distributed.destroy_process_group()

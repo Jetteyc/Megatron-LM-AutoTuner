@@ -1,5 +1,6 @@
 import os
-from typing import Any, Iterator, List, Optional, Tuple, override
+from typing import Any, Iterator, List, Optional, Tuple
+from typing_extensions import override
 
 import torch
 from megatron.core import tensor_parallel
@@ -43,7 +44,7 @@ class TestLanguageModelEmbedding(TestCommon):
 
         self.memory_db["weights"][
             self.module_name
-        ] = memory_tracker_ctx.get_memory_usage()
+        ] = memory_tracker_ctx.get_result()
 
     @override
     def prepare_input(self, test_case: InputTestCase, batch_data_generator: Iterator):
@@ -53,4 +54,4 @@ class TestLanguageModelEmbedding(TestCommon):
         input_ids_rmpad, attention_mask, position_ids_rmpad, packed_seq_params = (
             get_thd_model_input_from_bshd(batch)
         )
-        return input_ids_rmpad, attention_mask, position_ids_rmpad, packed_seq_params
+        return input_ids_rmpad, position_ids_rmpad

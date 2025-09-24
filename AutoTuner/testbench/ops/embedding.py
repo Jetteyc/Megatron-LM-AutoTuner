@@ -1,5 +1,5 @@
+import logging
 from typing import Optional
-
 import torch
 from megatron.core import tensor_parallel
 from megatron.core.models.common.embeddings.language_model_embedding import (
@@ -26,19 +26,21 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
         tp_group: Optional[torch.distributed.ProcessGroup] = None,
         hook_activation=False,
     ):
-        super(LanguageModelEmbedding).__init__(
+        LanguageModelEmbedding.__init__(
+            self,
             config=tf_config,
             vocab_size=hf_config.vocab_size,
             max_sequence_length=hf_config.max_position_embeddings,
-            position_embedding_type="learned_absolute",
+            position_embedding_type="rope",
             num_tokentypes=0,
             scatter_to_sequence_parallel=scatter_to_sequence_parallel,
             tp_group=tp_group,
         )
-        super(CommonOpsForTest).__init__(
+        CommonOpsForTest.__init__(
+            self,
             hook_activation=hook_activation,
             module_name="LanguageModelEmbedding",
-            logging_level=torch.logging.INFO,
+            logging_level=logging.INFO,
         )
 
     # @MemoryTracker.track_decorator()

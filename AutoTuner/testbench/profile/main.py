@@ -1,15 +1,18 @@
 import argparse
 import json
 import os
+import sys
+import torch
 from typing import List
+import time
 
 from AutoTuner.utils.nvtx import enable_nvtx_profiling
 from AutoTuner.utils.structs import InputTestCase
-from AutoTuner.utils.distributed import init_distributed_multi_nodes
+from AutoTuner.utils.distributed import init_distributed_multi_nodes, destroy_distributed
 
-from .configs.config_struct import ProfileConfig
-from .launcher.get_data_launch import LaunchDataCollectionForOps
-from .launcher.profile_launch import LaunchProfileForOps
+from AutoTuner.testbench.profile.configs.config_struct import ProfileConfig
+from AutoTuner.testbench.profile.launcher.get_data_launch import LaunchDataCollectionForOps
+from AutoTuner.testbench.profile.launcher.profile_launch import LaunchProfileForOps
 
 
 def validate_args(args):
@@ -29,6 +32,8 @@ def validate_args(args):
     assert os.path.exists(
         args.real_override_tf_config_file
     ), f"{args.real_override_tf_config_file} not found"
+    
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # Validate distributed
     assert os.environ.get("WORLD_SIZE") is not None, "WORLD_SIZE is not set"
@@ -95,7 +100,7 @@ def parse_args():
     )
     # File and directories
     parser.add_argument(
-        "--test_cases-dir",
+        "--test-cases-dir",
         type=str,
         required=False,
         default="AutoTuner/testbench/profile/cases/",
@@ -192,7 +197,7 @@ def handle_model_config(args) -> dict:
 
 
 def handle_tf_config(args) -> dict:
-    with open(args.real_tf_config_config, "r") as fp:
+    with open(args.real_override_tf_config_file, "r") as fp:
         override_tf_config = json.load(fp)
     return override_tf_config
 
@@ -221,23 +226,27 @@ def call_launcher(
         enable_nvtx_profiling()
 
     if args.test_case_idxs is None and args.test_ops_list is None:
-        launcher.run_all_supported_ops()
+        launcher.run_all_supported_ops(test_case_idxs=None)
     else:
         launcher.run_op_list(args.test_ops_list, args.test_case_idxs)
 
     if not profile_config.profile_mode:
         total_timing_db, total_memory_db = launcher.return_results()
         output_dir = os.path.join(args.output_dir, args.model_name, "collect_data")
+        os.makedirs(output_dir, exist_ok=True)
         with open(os.path.join(output_dir, "timing.json"), "a+") as fp:
-            json.dump(total_timing_db, fp)
+            json.dump(total_timing_db, fp, indent=4)
         with open(os.path.join(output_dir, "memory_activation.json"), "a+") as fp:
-            json.dump(total_memory_db["activation"], fp)
+            json.dump(total_memory_db["activations"], fp, indent=4)
         with open(os.path.join(output_dir, "memory_weights.json"), "a+") as fp:
-            json.dump(total_memory_db["weights"], fp)
+            json.dump(total_memory_db["weights"], fp, indent=4)
+        print(f"results dumped to {output_dir}")
 
 
-if __name__ == "main":
+if __name__ == "__main__":
+    print(f"Parsing args ...")
     args = parse_args()
+    print("Initializing distributed ...")
     init_distributed_multi_nodes(
         tp=args.tensor_model_parallel_size,
         pp=args.pipeline_model_parallel_size,
@@ -246,10 +255,17 @@ if __name__ == "main":
         ep=args.expert_parallel_size,
         etp=args.expert_tensor_parallel_size,
     )
+    print("Distributed initialized.")
+    if torch.distributed.get_rank() == 0:
+        print(f"Args: {args}")
     test_cases = handle_test_cases(args)
     profile_config = handle_profile_configs(args)
     override_model_config = handle_model_config(args)
     override_tf_config = handle_tf_config(args)
-    call_launcher(
-        args, test_cases, profile_config, override_model_config, override_tf_config
-    )
+    print("Calling launcher ...")
+    try:
+        call_launcher(
+            args, test_cases, profile_config, override_model_config, override_tf_config
+        )
+    finally:
+        destroy_distributed()

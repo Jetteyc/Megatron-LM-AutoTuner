@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source .secrets/env.sh
+
 MEGATRON_LM_HASH=$(git -C "Megatron-LM" rev-parse --short=6 HEAD)
 TRANSFORMER_ENGINE_HASH=$(git -C "TransformerEngine" rev-parse --short=6 HEAD)
 VERL_HASH=$(git -C "verl" rev-parse --short=6 HEAD)
@@ -11,11 +13,11 @@ TEST_OPS_LIST=None
 TEST_CASE_IDXES=None
 
 TIMESTAMP_VAR=$(date +"%Y-%m-%d_%H-%M-%S")
-OUTPUT_DIR=outputs/$(TIMESTAMP_VAR)
+OUTPUT_DIR=outputs/${TIMESTAMP_VAR}
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-GPUS_PER_NODE=8
+GPUS_PER_NODE=1
 # Change for multinode config
 MASTER_ADDR=localhost
 MASTER_PORT=6000
@@ -33,7 +35,7 @@ DISTRIBUTED_ARGS=(
 PARALLEL_ARGS=(
     --tensor-model-parallel-size 1
     --pipeline-model-parallel-size 1
-    --virtual-pipeline-model-parallel-size 1
+    # --virtual-pipeline-model-parallel-size None
     --context-parallel-size 1
     --expert-parallel-size 1
     --expert-tensor-parallel-size 1
@@ -42,12 +44,18 @@ PARALLEL_ARGS=(
 PROFILE_ARGS=(
     --model-name $MODEL_NAME
     --test-cases-file $TEST_CASES_FILE
-    --test-ops-list $TEST_OPS_LIST
-    --test-case-idxes $TEST_CASE_IDXES
     --output-dir $OUTPUT_DIR
 )
 
-nsys profile "${NSYS_ARGS[@]}" \
-    torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.main \
-        ${PROFILE_ARGS[@]} \
-        ${PARALLEL_ARGS[@]}
+OPTIONAL_PROFILE_ARGS=()
+if [[ "${TEST_OPS_LIST}" != "None" ]]; then
+    OPTIONAL_PROFILE_ARGS+=(--test-ops-list ${TEST_OPS_LIST})
+fi
+if [[ "${TEST_CASE_IDXES}" != "None" ]]; then
+    OPTIONAL_PROFILE_ARGS+=(--test-case-idxes ${TEST_CASE_IDXES})
+fi
+
+torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.profile.main \
+    ${PROFILE_ARGS[@]} \
+    ${OPTIONAL_PROFILE_ARGS[@]} \
+    ${PARALLEL_ARGS[@]}

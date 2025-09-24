@@ -55,8 +55,11 @@ class Launcher:
             profile_mode=self.profile_config.profile_mode,
             warmup_iters=self.profile_config.warmup_iters,
         )
+        if test_case_idxs is None:
+            test_case_idxs = list(range(len(self.test_cases)))
         test_cases = [self.test_cases[i] for i in test_case_idxs]
         for test_case in test_cases:
+            print (f"Running operator: {op_name}, test case: {test_case}")
             batch_data_generator = self.datasets.get_batch_generator(
                 test_case.batch_size, test_case.seqlen, test_case.max_token_len
             )

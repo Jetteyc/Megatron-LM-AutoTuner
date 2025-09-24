@@ -14,11 +14,24 @@ def get_gpu_memory() -> float:
     memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
     return statistics.mean(memory_free_values)
 
+def get_memory_str(mem: int, human_readable: bool = True) -> str:
+    if human_readable:
+        if mem < 1024:
+            return f"{mem} B"
+        elif mem < 1024 ** 2:
+            return f"{mem / 1024:.2f} KB"
+        elif mem < 1024 ** 3:
+            return f"{mem / (1024 ** 2):.2f} MB"
+        else:
+            return f"{mem / (1024 ** 3):.2f} GB"
+    else:
+        return str(mem)
 
 class MemoryTrackerContext:
-    def __init__(self, name: str = "", log_level: int = logging.INFO):
+    def __init__(self, name: str = "", log_level: int = logging.INFO, human_readable: bool = True):
         self.name = name
         self.log_level = log_level
+        self.human_readable = human_readable
 
     def __enter__(self) -> "MemoryTrackerContext":
         import torch
@@ -41,19 +54,34 @@ class MemoryTrackerContext:
         self.mem_diff = self.end_mem - self.start_mem
         self.real_mem_diff = self.end_real_mem - self.start_real_mem
         self.result = {
-            "mem_diff": self.mem_diff,
-            "peak_mem_diff": self.peak_mem_diff,
-            "real_mem_diff": self.real_mem_diff,
+            "start_mem": get_memory_str(self.start_mem, self.human_readable),
+            "end_mem": get_memory_str(self.end_mem, self.human_readable),
+            "start_peak_mem": get_memory_str(self.start_peak_mem, self.human_readable),
+            "end_peak_mem": get_memory_str(self.end_peak_mem, self.human_readable),
+            "start_real_mem": get_memory_str(self.start_real_mem, self.human_readable),
+            "end_real_mem": get_memory_str(self.end_real_mem, self.human_readable),
+            "mem_diff": get_memory_str(self.mem_diff, self.human_readable),
+            "peak_mem_diff": get_memory_str(self.peak_mem_diff, self.human_readable),
+            "real_mem_diff": get_memory_str(self.real_mem_diff, self.human_readable),
         }
         reserved_mem = torch.cuda.memory_reserved()
         log_rank0(
             f"[MemoryTracker] {self.name} | "
-            f"Memory Diff: {self.mem_diff / (1024 ** 2):.2f} MB | "
-            f"Peak Memory Diff: {self.peak_mem_diff / (1024 ** 2):.2f} MB | "
-            f"Real Memory Diff: {self.real_mem_diff / (1024 ** 2):.2f} MB | "
-            f"Reserved Memory: {reserved_mem / (1024 ** 2):.2f} MB",
+            f"Start Mem: {get_memory_str(self.start_mem, self.human_readable)} | "
+            f"End Mem: {get_memory_str(self.end_mem, self.human_readable)} | "
+            f"Start Peak Mem: {get_memory_str(self.start_peak_mem, self.human_readable)} | "
+            f"End Peak Mem: {get_memory_str(self.end_peak_mem, self.human_readable)} | "
+            f"Start Real Mem: {get_memory_str(self.start_real_mem, self.human_readable)} | "
+            f"End Real Mem: {get_memory_str(self.end_real_mem, self.human_readable)} | "
+            f"Memory Diff: {get_memory_str(self.mem_diff, self.human_readable)} | "
+            f"Peak Memory Diff: {get_memory_str(self.peak_mem_diff, self.human_readable)} | "
+            f"Real Memory Diff: {get_memory_str(self.real_mem_diff, self.human_readable)} | "
+            f"Reserved Memory: {get_memory_str(reserved_mem, self.human_readable)}",
             level=self.log_level,
         )
+    
+    def get_result(self) -> dict:
+        return self.result
 
 
 class MemoryTracker:
@@ -62,6 +90,12 @@ class MemoryTracker:
         with MemoryTrackerContext(name=func.__name__) as tracker:
             result = func(*args, **kwargs)
         return result, {
+            "start_mem": tracker.start_mem,
+            "end_mem": tracker.end_mem,
+            "start_peak_mem": tracker.start_peak_mem,
+            "end_peak_mem": tracker.end_peak_mem,
+            "start_real_mem": tracker.start_real_mem,
+            "end_real_mem": tracker.end_real_mem,
             "mem_diff": tracker.mem_diff,
             "peak_mem_diff": tracker.peak_mem_diff,
             "real_mem_diff": tracker.real_mem_diff,
@@ -74,6 +108,12 @@ class MemoryTracker:
                 with MemoryTrackerContext(name=f"{preffix} {func.__name__}") as tracker:
                     result = func(*args, **kwargs)
                 return result, {
+                    "start_mem": tracker.start_mem,
+                    "end_mem": tracker.end_mem,
+                    "start_peak_mem": tracker.start_peak_mem,
+                    "end_peak_mem": tracker.end_peak_mem,
+                    "start_real_mem": tracker.start_real_mem,
+                    "end_real_mem": tracker.end_real_mem,
                     "mem_diff": tracker.mem_diff,
                     "peak_mem_diff": tracker.peak_mem_diff,
                     "real_mem_diff": tracker.real_mem_diff,

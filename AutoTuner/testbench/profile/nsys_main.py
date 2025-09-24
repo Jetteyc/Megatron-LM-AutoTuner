@@ -80,7 +80,7 @@ class NsysLauncher:
         print(f"stdout: {process.stdout}\nstderr: {process.stderr}")
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     args = parse_args()
     launcher = NsysLauncher(args)
     launcher.run_nsys_profile()

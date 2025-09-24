@@ -76,7 +76,7 @@ class TestCommon(ABC):
         pass
 
     def run_test(self, test_case: InputTestCase, batch_data_generator: Iterator):
-        inputs = self.prepare_input()
+        inputs = self.prepare_input(test_case=test_case, batch_data_generator=batch_data_generator)
 
         if self.profile_mode:
             """
@@ -85,9 +85,9 @@ class TestCommon(ABC):
             torch.cuda.profiler.stop()
             if self.warmup_iters > 0:
                 for _ in range(self.warmup_iters):
-                    self.op(**inputs)
+                    self.op(*inputs)
             torch.cuda.profiler.start()
-            self.op(**inputs)
+            self.op(*inputs)
             torch.cuda.profiler.stop()
         else:
             """
@@ -98,19 +98,20 @@ class TestCommon(ABC):
             torch.cuda.reset_peak_memory_stats()
             if self.warmup_iters > 0:
                 for _ in range(self.warmup_iters):
-                    self.op(**inputs)
+                    self.op(*inputs)
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
 
             name = f"{self.module_name} forward {test_case}"
             with TimerContext(name) as timer_ctx:
-                self.op(**inputs)
-            self.timing_db[self.module_name]["forward"][test_case] = timer_ctx.result
-            self.memory_db["activations"][self.module_name][
-                test_case
-            ] = self.op.get_activation_memory()
-
+                self.op(*inputs)
+            self.timing_db[self.module_name]["forward"] = test_case.set_nested_dict(self.timing_db[self.module_name]["forward"], timer_ctx.result)
+            self.memory_db["activations"] = test_case.set_nested_dict(
+                self.memory_db["activations"],
+                self.op.get_activation_memory(),
+            )
+    
     def get_results(self) -> Tuple[dict, dict]:
         assert (
             not self.profile_mode

@@ -28,20 +28,20 @@ class LaunchDataCollectionForOps(Launcher):
         self.total_timing_db = NestedDict()
         self.total_memory_db = {"weights": {}, "activations": NestedDict()}
 
-    def run_op(self, op_name: str):
-        op_class_instance = super().run_op()
+    def run_op(self, op_name: str, test_case_idxs: list[int]):
+        op_class_instance = super().run_op(op_name, test_case_idxs=test_case_idxs)
         timing_db, memory_db = op_class_instance.get_results()
         self.total_timing_db.merge(timing_db)
         self.total_memory_db["weights"].update(memory_db["weights"])
         self.total_memory_db["activations"].merge(memory_db["activations"])
 
-    def run_op_list(self, op_name_list: list[str]):
+    def run_op_list(self, op_name_list: list[str], test_case_idxs: list[int]):
         for op_name in op_name_list:
             print(f"Running operator: {op_name}")
-            self.run_op(op_name)
+            self.run_op(op_name, test_case_idxs=test_case_idxs)
 
-    def run_all_supported_ops(self):
-        self.run_op_list(self.all_supported_ops)
+    def run_all_supported_ops(self, test_case_idxs: list[int]):
+        self.run_op_list(self.all_supported_ops, test_case_idxs=test_case_idxs)
 
     def return_results(self):
         return self.total_timing_db, self.total_memory_db

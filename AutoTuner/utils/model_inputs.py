@@ -163,7 +163,7 @@ class DataSets:
                     max_token_len=max_token_len,
                     num_batches_divided_by=self.vpp_size,
                     use_dynamic_bsz_balance=self.use_dynamic_bsz_balance,
-                    same_micro_num_in_dp=False,
+                    same_micro_num_in_dp=True,
                 )
                 self.data[(batch_size, seqlen, max_token_len)] = micro_batches
             self.data_batch_generators[(batch_size, seqlen, max_token_len)] = (

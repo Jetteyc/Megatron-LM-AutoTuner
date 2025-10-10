@@ -10,9 +10,10 @@ from AutoTuner.utils.nvtx import enable_nvtx_profiling
 from AutoTuner.utils.structs import InputTestCase
 from AutoTuner.utils.distributed import init_distributed_multi_nodes, destroy_distributed
 
-from AutoTuner.testbench.profile.configs.config_struct import ProfileConfig
+from AutoTuner.testbench.profile.configs.config_struct import ProfileMode, ProfileConfig, TorchProfilerConfig
 from AutoTuner.testbench.profile.launcher.get_data_launch import LaunchDataCollectionForOps
-from AutoTuner.testbench.profile.launcher.profile_launch import LaunchProfileForOps
+from AutoTuner.testbench.profile.launcher.nsys_profile_launch import LaunchNsysProfileForOps
+from AutoTuner.testbench.profile.launcher.torch_profile_launch import LaunchTorchProfileForOps
 
 
 def validate_args(args):
@@ -134,19 +135,12 @@ def parse_args():
         default="override_tf_config.json",
         help="TransformerConfig to override",
     )
-    parser.add_argument(
-        "--profile-config-file",
-        type=str,
-        required=False,
-        default="profile_config.json",
-        help="profile config file",
-    )
 
     # Profile configs
     parser.add_argument(
         "--profile-mode",
-        action="store_true",
-        help="Enable it when using nsys profile, disable it in case of data collection",
+        type="int",
+        help="0: collect data, 1: nsys profile, 2: torch profiler",
     )
     parser.add_argument(
         "--warmup-iters",
@@ -209,17 +203,27 @@ def call_launcher(
     override_model_config: dict,
     override_tf_config: dict,
 ):
-    launcher_cls = (
-        LaunchProfileForOps
-        if profile_config.profile_mode
-        else LaunchDataCollectionForOps
-    )
+    launcher_cls = None
+    if profile_config.profile_mode == ProfileMode.collect_data:
+        launcher_cls = LaunchDataCollectionForOps
+    elif profile_config.profile_mode == ProfileMode.nsys_profile:
+        launcher_cls = LaunchNsysProfileForOps
+    elif profile_config.profile_mode == ProfileMode.torch_profile:
+        launcher_cls = LaunchTorchProfileForOps
+    else:
+        raise ValueError(f"Unsupported profile mode: {profile_config.profile_mode}")
+    torch_profiler_config = None
+    if profile_config.profile_mode == ProfileMode.torch_profile:
+        torch_profiler_config = TorchProfilerConfig(
+            log_dir=os.path.join(args.output_dir, args.model_name, "torch_profiler")
+        )
     launcher = launcher_cls(
         profile_config,
         test_cases,
         model_name=args.model_name,
         override_model_kwargs=override_model_config,
         override_tf_config_kwargs=override_tf_config,
+        torch_profiler_config=torch_profiler_config,
     )
 
     if profile_config.profile_mode:

@@ -1,9 +1,10 @@
 from AutoTuner.utils.structs import InputTestCase
 
 from ..configs.config_struct import ProfileConfig
+from .launcher import Launcher
 
 
-class LaunchProfileForOps:
+class LaunchNsysProfileForOps(Launcher):
     def __init__(
         self,
         profile_config: ProfileConfig,

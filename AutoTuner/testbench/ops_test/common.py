@@ -15,6 +15,7 @@ from AutoTuner.utils.structs import InputTestCase
 from AutoTuner.utils.timing import Timer, TimerContext
 
 from ..ops.common import CommonOpsForTest
+from ..configs.config_struct import ProfileMode
 
 os.environ["NVTE_NVTX_ENABLED"] = "1"
 
@@ -23,7 +24,7 @@ class TestCommon(ABC):
     def __init__(
         self,
         hf_config: PretrainedConfig,
-        profile_mode: bool = False,
+        profile_mode: int = 0,
         warmup_iters: int = 2,
     ):
         self.op: CommonOpsForTest = None
@@ -64,7 +65,7 @@ class TestCommon(ABC):
             }
         }
         """
-        if not profile_mode:
+        if profile_mode == ProfileModel.collect_data:
             self.timing_db = NestedDict()
             self.memory_db = {"weights": {}, "activations": NestedDict()}
         self.model_config = hf_config
@@ -78,7 +79,7 @@ class TestCommon(ABC):
     def run_test(self, test_case: InputTestCase, batch_data_generator: Iterator):
         inputs = self.prepare_input(test_case=test_case, batch_data_generator=batch_data_generator)
 
-        if self.profile_mode:
+        if self.profile_mode == ProfileModel.nsys_profile:
             """
             When using nsys profile
             """
@@ -89,6 +90,11 @@ class TestCommon(ABC):
             torch.cuda.profiler.start()
             self.op(*inputs)
             torch.cuda.profiler.stop()
+        elif self.profile_mode == ProfileModel.torch_profiler:
+            """
+            When using torch profiler
+            """
+            self.op(*inputs)
         else:
             """
             When collecting data

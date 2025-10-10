@@ -35,7 +35,7 @@ class NsysLauncher:
             "-w",
             "true",
             "-o",
-            f"{args.output_dir}/{args.model_name}/nsight_report",
+            f"{args.output_dir}/{args.model_name}/nsys_profile",
             "-f",
             "true",
             "-x",

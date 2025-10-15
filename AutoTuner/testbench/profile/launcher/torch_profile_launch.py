@@ -1,5 +1,6 @@
-from AutoTuner.utils.structs import InputTestCase
 import torch
+
+from AutoTuner.utils.structs import InputTestCase
 
 from ..configs.config_struct import ProfileConfig, TorchProfilerConfig
 from ..op_mapping import OP_TEST_MAPPING
@@ -33,8 +34,8 @@ class LaunchTorchProfileForOps(Launcher):
             active=1,
             repeat=1,
         )
-        self.torch_profiler_config.on_trace_ready = torch.profiler.tensorboard_trace_handler(
-            self.torch_profiler_config.log_dir
+        self.torch_profiler_config.on_trace_ready = (
+            torch.profiler.tensorboard_trace_handler(self.torch_profiler_config.log_dir)
         )
         self.prof = torch.profiler.profile(
             activities=self.torch_profiler_config.activities,
@@ -46,7 +47,7 @@ class LaunchTorchProfileForOps(Launcher):
             with_flops=self.torch_profiler_config.with_flops,
             with_modules=self.torch_profiler_config.with_modules,
         )
-    
+
     def _run_op(self, op_name: str, test_case_idxs: list[int]):
         op_test_class = OP_TEST_MAPPING.get(op_name)
         if op_test_class is None:
@@ -58,7 +59,7 @@ class LaunchTorchProfileForOps(Launcher):
             profile_mode=self.profile_config.profile_mode,
             warmup_iters=self.profile_config.warmup_iters,
         )
-        print (f"Running operator: {op_name}")
+        print(f"Running operator: {op_name}")
         if test_case_idxs is None:
             test_case_idxs = list(range(len(self.test_cases)))
         test_cases = [self.test_cases[i] for i in test_case_idxs]
@@ -80,7 +81,7 @@ class LaunchTorchProfileForOps(Launcher):
             profile_mode=self.profile_config.profile_mode,
             warmup_iters=self.profile_config.warmup_iters,
         )
-        print (f"Running operator: {op_name}")
+        print(f"Running operator: {op_name}")
         if test_case_idxs is None:
             test_case_idxs = list(range(len(self.test_cases)))
         test_cases = [self.test_cases[i] for i in test_case_idxs]

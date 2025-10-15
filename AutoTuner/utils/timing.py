@@ -24,7 +24,7 @@ class TimerContext:
         self.elapsed_time = self.end_time - self.start_time
         self.result = str(self.elapsed_time) + " seconds"
         print(f"{self.name} took {self.elapsed_time:.6f} seconds")
-    
+
     def get_result(self) -> str:
         return self.result
 

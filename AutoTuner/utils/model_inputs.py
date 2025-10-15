@@ -138,9 +138,7 @@ class DataSets:
             system = test_case.system
 
             input_ids, attention_mask, position_ids, packed_seq_params = (
-                _get_one_model_input_bshd(
-                    model_config, batch_size, seqlen
-                )
+                _get_one_model_input_bshd(model_config, batch_size, seqlen)
             )
             batch = TensorDict(
                 {
@@ -177,4 +175,3 @@ class DataSets:
         self, batch_size: int, seqlen: int, max_token_len: int | None
     ):
         return self.data_batch_generators[(batch_size, seqlen, max_token_len)]
-

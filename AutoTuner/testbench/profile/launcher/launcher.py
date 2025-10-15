@@ -1,6 +1,7 @@
 import subprocess
 from collections import defaultdict
 
+import torch
 from megatron.core import parallel_state as mpu
 
 from AutoTuner.utils.config import (
@@ -8,8 +9,6 @@ from AutoTuner.utils.config import (
     get_mcore_model_config_from_hf_config,
 )
 from AutoTuner.utils.model_inputs import DataSets
-import torch
-
 from AutoTuner.utils.nested_dict import NestedDict
 from AutoTuner.utils.structs import InputTestCase
 
@@ -32,7 +31,9 @@ class Launcher:
         self.tf_config = get_mcore_model_config_from_hf_config(
             self.hf_config, **override_tf_config_kwargs
         )
-        assert torch.distributed.is_initialized(), f"torch distributed shall be initialized"
+        assert (
+            torch.distributed.is_initialized()
+        ), f"torch distributed shall be initialized"
         self.tp_group = mpu.get_tensor_model_parallel_group()
         self.test_cases = test_cases
         self.datasets = DataSets(
@@ -59,7 +60,7 @@ class Launcher:
             test_case_idxs = list(range(len(self.test_cases)))
         test_cases = [self.test_cases[i] for i in test_case_idxs]
         for test_case in test_cases:
-            print (f"Running operator: {op_name}, test case: {test_case}")
+            print(f"Running operator: {op_name}, test case: {test_case}")
             batch_data_generator = self.datasets.get_batch_generator(
                 test_case.batch_size, test_case.seqlen, test_case.max_token_len
             )

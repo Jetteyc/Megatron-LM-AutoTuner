@@ -11,9 +11,9 @@ from transformers import PretrainedConfig
 from AutoTuner.utils.memory import MemoryTracker, MemoryTrackerContext
 from AutoTuner.utils.model_inputs import get_thd_model_input_from_bshd
 from AutoTuner.utils.nested_dict import NestedDict
+from AutoTuner.utils.nvtx import nvtx_decorator, nvtx_range_pop, nvtx_range_push
 from AutoTuner.utils.structs import InputTestCase
 from AutoTuner.utils.timing import Timer, TimerContext
-from AutoTuner.utils.nvtx import nvtx_decorator, nvtx_range_pop, nvtx_range_push
 
 from ..ops.common import CommonOpsForTest
 from ..profile.configs.config_struct import ProfileMode
@@ -78,24 +78,26 @@ class TestCommon(ABC):
         pass
 
     def run_test(self, test_case: InputTestCase, batch_data_generator: Iterator):
-        inputs = self.prepare_input(test_case=test_case, batch_data_generator=batch_data_generator)
+        inputs = self.prepare_input(
+            test_case=test_case, batch_data_generator=batch_data_generator
+        )
 
         if self.profile_mode == ProfileMode.nsys_profile:
             """
             When using nsys profile
             """
-            
+
             # Warmup iterations
             torch.cuda.profiler.stop()
             if self.warmup_iters > 0:
                 for _ in range(self.warmup_iters):
                     self.op(*inputs)
-            
+
             # Call forward function - force output to require grad
             torch.cuda.profiler.start()
             output = self.op(*inputs)
             torch.cuda.profiler.stop()
-            
+
             # Call backward function - force output to require grad
             output.requires_grad_(True)
             torch.cuda.profiler.start()
@@ -107,10 +109,10 @@ class TestCommon(ABC):
             """
             When using torch profiler, we do warmup outside
             """
-            
+
             # Forward pass
             output = self.op(*inputs)
-            
+
             # Backward pass
             output.requires_grad_(True)
             nvtx_range_push("backward")
@@ -134,8 +136,10 @@ class TestCommon(ABC):
             name = f"{self.module_name} forward {test_case}"
             with TimerContext(name) as timer_ctx:
                 output = self.op(*inputs)
-            self.timing_db[self.module_name]["forward"] = test_case.set_nested_dict(self.timing_db[self.module_name]["forward"], timer_ctx.result)
-            
+            self.timing_db[self.module_name]["forward"] = test_case.set_nested_dict(
+                self.timing_db[self.module_name]["forward"], timer_ctx.result
+            )
+
             # Call backward function - force output to require grad
             output.requires_grad_(True)
             name = f"{self.module_name} backward {test_case}"
@@ -143,13 +147,15 @@ class TestCommon(ABC):
                 # Create a dummy loss tensor and call backward
                 loss = output.sum()
                 loss.backward()
-            self.timing_db[self.module_name]["backward"] = test_case.set_nested_dict(self.timing_db[self.module_name]["backward"], timer_ctx.result)
-            
+            self.timing_db[self.module_name]["backward"] = test_case.set_nested_dict(
+                self.timing_db[self.module_name]["backward"], timer_ctx.result
+            )
+
             self.memory_db["activations"] = test_case.set_nested_dict(
                 self.memory_db["activations"],
                 {self.module_name: self.op.get_activation_memory()},
             )
-    
+
     def get_results(self) -> Tuple[dict, dict]:
         assert (
             not self.profile_mode

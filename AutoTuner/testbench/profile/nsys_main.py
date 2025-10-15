@@ -1,5 +1,10 @@
 import warnings
-warnings.warn("Deprecared! Only support single node, use scripts instead!", DeprecationWarning, stacklevel=2)
+
+warnings.warn(
+    "Deprecared! Only support single node, use scripts instead!",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import os
 import subprocess
@@ -11,10 +16,10 @@ from AutoTuner.utils.config import (
     get_hf_model_config,
     get_mcore_model_config_from_hf_config,
 )
+from AutoTuner.utils.distributed import init_distributed_single_node
 from AutoTuner.utils.model_inputs import DataSets
 from AutoTuner.utils.nested_dict import NestedDict
 from AutoTuner.utils.structs import InputTestCase
-from AutoTuner.utils.distributed import init_distributed_single_node
 
 from .configs.config_struct import ProfileConfig
 from .main import parse_args
@@ -35,7 +40,12 @@ class NsysLauncher:
             "-w",
             "true",
             "-o",
-            os.path.join(args.output_dir, args.model_name, "nsys_profile", f"rank_{os.environ.get('RANK')}"),
+            os.path.join(
+                args.output_dir,
+                args.model_name,
+                "nsys_profile",
+                f"rank_{os.environ.get('RANK')}",
+            ),
             "-f",
             "true",
             "-x",

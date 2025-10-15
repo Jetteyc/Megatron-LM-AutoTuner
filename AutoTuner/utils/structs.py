@@ -38,15 +38,9 @@ class InputTestCase:
         Returns:
             NestedDict: The updated NestedDict.
         """
-        nested_dict[
-            f"batch_size={self.batch_size}"
-        ][
+        nested_dict[f"batch_size={self.batch_size}"][
             f"micro_batch_size={self.micro_batch_size}"
-        ][
-            f"seqlen={self.seqlen}"
-        ][
-            f"max_token_len={self.max_token_len}"
-        ][
+        ][f"seqlen={self.seqlen}"][f"max_token_len={self.max_token_len}"][
             f"shape={self.shape}"
         ][
             f"system={self.system}"

@@ -14,21 +14,25 @@ def get_gpu_memory() -> float:
     memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
     return statistics.mean(memory_free_values)
 
+
 def get_memory_str(mem: int, human_readable: bool = True) -> str:
     if human_readable:
         if mem < 1024:
             return f"{mem} B"
-        elif mem < 1024 ** 2:
+        elif mem < 1024**2:
             return f"{mem / 1024:.2f} KB"
-        elif mem < 1024 ** 3:
+        elif mem < 1024**3:
             return f"{mem / (1024 ** 2):.2f} MB"
         else:
             return f"{mem / (1024 ** 3):.2f} GB"
     else:
         return str(mem)
 
+
 class MemoryTrackerContext:
-    def __init__(self, name: str = "", log_level: int = logging.INFO, human_readable: bool = True):
+    def __init__(
+        self, name: str = "", log_level: int = logging.INFO, human_readable: bool = True
+    ):
         self.name = name
         self.log_level = log_level
         self.human_readable = human_readable
@@ -79,7 +83,7 @@ class MemoryTrackerContext:
             f"Reserved Memory: {get_memory_str(reserved_mem, self.human_readable)}",
             level=self.log_level,
         )
-    
+
     def get_result(self) -> dict:
         return self.result
 

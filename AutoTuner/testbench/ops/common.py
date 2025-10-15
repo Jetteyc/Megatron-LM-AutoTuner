@@ -18,4 +18,6 @@ class CommonOpsForTest(ABC):
         self.activation_tensors = []
 
     def get_activation_memory(self) -> int:
-        return get_memory_str(self.activation_hook.get_activation_memory(), human_readable=True)
+        return get_memory_str(
+            self.activation_hook.get_activation_memory(), human_readable=True
+        )

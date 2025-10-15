@@ -1,12 +1,12 @@
+import os
 from typing import Dict
 
 import torch
-import os
 from transformers import AutoConfig
 
 from verl.models.mcore.registry import hf_to_mcore_config
 
-HUGGINGFACE_MODEL_DIR=os.environ.get("HUGGINGFACE_MODEL_DIR", "/data/common/")
+HUGGINGFACE_MODEL_DIR = os.environ.get("HUGGINGFACE_MODEL_DIR", "/data/common/")
 
 
 def get_hf_model_config(model_name: str, **kwargs) -> AutoConfig:
@@ -18,7 +18,7 @@ def get_mcore_model_config(
     model_name: str,
     dtype: torch.dtype = torch.bfloat16,
     hf_kwargs: Dict = {},
-    **override_tf_config_kwargs
+    **override_tf_config_kwargs,
 ) -> Dict:
     hf_config = get_hf_model_config(model_name, **hf_kwargs)
     mcore_config = hf_to_mcore_config(hf_config, dtype, **override_tf_config_kwargs)

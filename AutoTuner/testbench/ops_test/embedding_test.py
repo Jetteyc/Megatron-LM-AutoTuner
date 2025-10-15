@@ -1,11 +1,11 @@
 import os
 from typing import Any, Iterator, List, Optional, Tuple
-from typing_extensions import override
 
 import torch
 from megatron.core import tensor_parallel
 from megatron.core.transformer.transformer_config import TransformerConfig
 from transformers import PretrainedConfig
+from typing_extensions import override
 
 from AutoTuner.utils.memory import MemoryTracker, MemoryTrackerContext
 from AutoTuner.utils.model_inputs import get_thd_model_input_from_bshd
@@ -42,9 +42,7 @@ class TestLanguageModelEmbedding(TestCommon):
             )
         self.module_name = "Embedding"
 
-        self.memory_db["weights"][
-            self.module_name
-        ] = memory_tracker_ctx.get_result()
+        self.memory_db["weights"][self.module_name] = memory_tracker_ctx.get_result()
 
     @override
     def prepare_input(self, test_case: InputTestCase, batch_data_generator: Iterator):

@@ -2,18 +2,31 @@ import argparse
 import json
 import os
 import sys
-import torch
-from typing import List
 import time
+from typing import List
 
+import torch
+
+from AutoTuner.testbench.profile.configs.config_struct import (
+    ProfileConfig,
+    ProfileMode,
+    TorchProfilerConfig,
+)
+from AutoTuner.testbench.profile.launcher.get_data_launch import (
+    LaunchDataCollectionForOps,
+)
+from AutoTuner.testbench.profile.launcher.nsys_profile_launch import (
+    LaunchNsysProfileForOps,
+)
+from AutoTuner.testbench.profile.launcher.torch_profile_launch import (
+    LaunchTorchProfileForOps,
+)
+from AutoTuner.utils.distributed import (
+    destroy_distributed,
+    init_distributed_multi_nodes,
+)
 from AutoTuner.utils.nvtx import enable_nvtx_profiling
 from AutoTuner.utils.structs import InputTestCase
-from AutoTuner.utils.distributed import init_distributed_multi_nodes, destroy_distributed
-
-from AutoTuner.testbench.profile.configs.config_struct import ProfileMode, ProfileConfig, TorchProfilerConfig
-from AutoTuner.testbench.profile.launcher.get_data_launch import LaunchDataCollectionForOps
-from AutoTuner.testbench.profile.launcher.nsys_profile_launch import LaunchNsysProfileForOps
-from AutoTuner.testbench.profile.launcher.torch_profile_launch import LaunchTorchProfileForOps
 
 
 def validate_args(args):
@@ -33,7 +46,7 @@ def validate_args(args):
     assert os.path.exists(
         args.real_override_tf_config_file
     ), f"{args.real_override_tf_config_file} not found"
-    
+
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Validate distributed
@@ -163,7 +176,7 @@ def parse_args():
         default="outputs",
         help="output directory to save the database results and nsys profile results, actual output_dir is args.output_dir/model_name/profile_mode",
     )
-    
+
     # distributed
     parser = parse_distributed_args(parser)
     args = parser.parse_args()
@@ -217,15 +230,21 @@ def call_launcher(
     if profile_config.profile_mode == ProfileMode.torch_profiler:
         torch_profiler_config_kwargs = {
             "torch_profiler_config": TorchProfilerConfig(
-            log_dir=os.path.join(args.output_dir, args.model_name, "torch_profiler", f"rank_{torch.distributed.get_rank()}")
-        )}
+                log_dir=os.path.join(
+                    args.output_dir,
+                    args.model_name,
+                    "torch_profiler",
+                    f"rank_{torch.distributed.get_rank()}",
+                )
+            )
+        }
     launcher = launcher_cls(
         profile_config,
         test_cases,
         model_name=args.model_name,
         override_model_kwargs=override_model_config,
         override_tf_config_kwargs=override_tf_config,
-        **torch_profiler_config_kwargs
+        **torch_profiler_config_kwargs,
     )
 
     if profile_config.profile_mode:
@@ -238,7 +257,12 @@ def call_launcher(
 
     if not profile_config.profile_mode:
         total_timing_db, total_memory_db = launcher.return_results()
-        output_dir = os.path.join(args.output_dir, args.model_name, "collect_data", f"rank_{torch.distributed.get_rank()}")
+        output_dir = os.path.join(
+            args.output_dir,
+            args.model_name,
+            "collect_data",
+            f"rank_{torch.distributed.get_rank()}",
+        )
         os.makedirs(output_dir, exist_ok=True)
         with open(os.path.join(output_dir, "timing.json"), "a+") as fp:
             json.dump(total_timing_db, fp, indent=4)

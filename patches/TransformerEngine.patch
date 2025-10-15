@@ -1,0 +1,13 @@
+diff --git a/transformer_engine/pytorch/attention/dot_product_attention/utils.py b/transformer_engine/pytorch/attention/dot_product_attention/utils.py
+index 7097f4ba..d6c3214c 100644
+--- a/transformer_engine/pytorch/attention/dot_product_attention/utils.py
++++ b/transformer_engine/pytorch/attention/dot_product_attention/utils.py
+@@ -106,7 +106,7 @@ class FlashAttentionUtils:
+     version = PkgVersion("0")
+     version_required = PkgVersion("2.1.1")
+     version_required_blackwell = PkgVersion("2.7.3")
+-    max_version = PkgVersion("2.8.1")
++    max_version = PkgVersion("2.8.3")
+     v2_plus = False
+     v2_1_plus = False
+     v2_3_plus = False

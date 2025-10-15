@@ -27,5 +27,5 @@ Target shapes:
 
 Go to [docs directory](./docs/)
 
-- [Quick Start](./docs/Install.md)
+- [Install](./docs/Install.md)
 - [Quick Start](./docs/QuickStart.md)

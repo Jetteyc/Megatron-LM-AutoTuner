@@ -128,6 +128,6 @@ outputs
 .history
 
 # secrets
-.secrets
+.secrets/env.sh
 
 *.nsys-rep

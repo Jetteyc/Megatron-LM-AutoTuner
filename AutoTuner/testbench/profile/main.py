@@ -139,8 +139,9 @@ def parse_args():
     # Profile configs
     parser.add_argument(
         "--profile-mode",
-        type="int",
+        type=int,
         help="0: collect data, 1: nsys profile, 2: torch profiler",
+        default=0,
     )
     parser.add_argument(
         "--warmup-iters",
@@ -208,22 +209,23 @@ def call_launcher(
         launcher_cls = LaunchDataCollectionForOps
     elif profile_config.profile_mode == ProfileMode.nsys_profile:
         launcher_cls = LaunchNsysProfileForOps
-    elif profile_config.profile_mode == ProfileMode.torch_profile:
+    elif profile_config.profile_mode == ProfileMode.torch_profiler:
         launcher_cls = LaunchTorchProfileForOps
     else:
         raise ValueError(f"Unsupported profile mode: {profile_config.profile_mode}")
-    torch_profiler_config = None
-    if profile_config.profile_mode == ProfileMode.torch_profile:
-        torch_profiler_config = TorchProfilerConfig(
-            log_dir=os.path.join(args.output_dir, args.model_name, "torch_profiler")
-        )
+    torch_profiler_config_kwargs = {}
+    if profile_config.profile_mode == ProfileMode.torch_profiler:
+        torch_profiler_config_kwargs = {
+            "torch_profiler_config": TorchProfilerConfig(
+            log_dir=os.path.join(args.output_dir, args.model_name, "torch_profiler", f"rank_{torch.distributed.get_rank()}")
+        )}
     launcher = launcher_cls(
         profile_config,
         test_cases,
         model_name=args.model_name,
         override_model_kwargs=override_model_config,
         override_tf_config_kwargs=override_tf_config,
-        torch_profiler_config=torch_profiler_config,
+        **torch_profiler_config_kwargs
     )
 
     if profile_config.profile_mode:
@@ -236,7 +238,7 @@ def call_launcher(
 
     if not profile_config.profile_mode:
         total_timing_db, total_memory_db = launcher.return_results()
-        output_dir = os.path.join(args.output_dir, args.model_name, "collect_data")
+        output_dir = os.path.join(args.output_dir, args.model_name, "collect_data", f"rank_{torch.distributed.get_rank()}")
         os.makedirs(output_dir, exist_ok=True)
         with open(os.path.join(output_dir, "timing.json"), "a+") as fp:
             json.dump(total_timing_db, fp, indent=4)

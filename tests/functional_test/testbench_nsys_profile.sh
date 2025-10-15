@@ -39,6 +39,7 @@ PROFILE_ARGS=(
     --test-cases-file $TEST_CASES_FILE
     --profile-mode
     --output-dir $OUTPUT_DIR
+    --profile-mode 1
 )
 
 OPTIONAL_PROFILE_ARGS=()

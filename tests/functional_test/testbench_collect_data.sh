@@ -45,6 +45,7 @@ PROFILE_ARGS=(
     --model-name $MODEL_NAME
     --test-cases-file $TEST_CASES_FILE
     --output-dir $OUTPUT_DIR
+    --profile-mode 0
 )
 
 OPTIONAL_PROFILE_ARGS=()

@@ -35,7 +35,7 @@ class NsysLauncher:
             "-w",
             "true",
             "-o",
-            f"{args.output_dir}/{args.model_name}/nsys_profile",
+            os.path.join(args.output_dir, args.model_name, "nsys_profile", f"rank_{os.environ.get('RANK')}"),
             "-f",
             "true",
             "-x",

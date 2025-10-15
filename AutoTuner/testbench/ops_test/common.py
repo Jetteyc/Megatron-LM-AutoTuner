@@ -13,9 +13,10 @@ from AutoTuner.utils.model_inputs import get_thd_model_input_from_bshd
 from AutoTuner.utils.nested_dict import NestedDict
 from AutoTuner.utils.structs import InputTestCase
 from AutoTuner.utils.timing import Timer, TimerContext
+from AutoTuner.utils.nvtx import nvtx_decorator, nvtx_range_pop, nvtx_range_push
 
 from ..ops.common import CommonOpsForTest
-from ..configs.config_struct import ProfileMode
+from ..profile.configs.config_struct import ProfileMode
 
 os.environ["NVTE_NVTX_ENABLED"] = "1"
 
@@ -65,7 +66,7 @@ class TestCommon(ABC):
             }
         }
         """
-        if profile_mode == ProfileModel.collect_data:
+        if profile_mode == ProfileMode.collect_data:
             self.timing_db = NestedDict()
             self.memory_db = {"weights": {}, "activations": NestedDict()}
         self.model_config = hf_config
@@ -79,22 +80,42 @@ class TestCommon(ABC):
     def run_test(self, test_case: InputTestCase, batch_data_generator: Iterator):
         inputs = self.prepare_input(test_case=test_case, batch_data_generator=batch_data_generator)
 
-        if self.profile_mode == ProfileModel.nsys_profile:
+        if self.profile_mode == ProfileMode.nsys_profile:
             """
             When using nsys profile
             """
+            
+            # Warmup iterations
             torch.cuda.profiler.stop()
             if self.warmup_iters > 0:
                 for _ in range(self.warmup_iters):
                     self.op(*inputs)
+            
+            # Call forward function - force output to require grad
             torch.cuda.profiler.start()
-            self.op(*inputs)
+            output = self.op(*inputs)
             torch.cuda.profiler.stop()
-        elif self.profile_mode == ProfileModel.torch_profiler:
+            
+            # Call backward function - force output to require grad
+            output.requires_grad_(True)
+            torch.cuda.profiler.start()
+            nvtx_range_push("backward")
+            output.sum().backward()
+            nvtx_range_pop("backward")
+            torch.cuda.profiler.stop()
+        elif self.profile_mode == ProfileMode.torch_profiler:
             """
-            When using torch profiler
+            When using torch profiler, we do warmup outside
             """
-            self.op(*inputs)
+            
+            # Forward pass
+            output = self.op(*inputs)
+            
+            # Backward pass
+            output.requires_grad_(True)
+            nvtx_range_push("backward")
+            output.sum().backward()
+            nvtx_range_pop("backward")
         else:
             """
             When collecting data
@@ -109,13 +130,24 @@ class TestCommon(ABC):
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
 
+            # Call forward function - force output to require grad
             name = f"{self.module_name} forward {test_case}"
             with TimerContext(name) as timer_ctx:
-                self.op(*inputs)
+                output = self.op(*inputs)
             self.timing_db[self.module_name]["forward"] = test_case.set_nested_dict(self.timing_db[self.module_name]["forward"], timer_ctx.result)
+            
+            # Call backward function - force output to require grad
+            output.requires_grad_(True)
+            name = f"{self.module_name} backward {test_case}"
+            with TimerContext(name) as timer_ctx:
+                # Create a dummy loss tensor and call backward
+                loss = output.sum()
+                loss.backward()
+            self.timing_db[self.module_name]["backward"] = test_case.set_nested_dict(self.timing_db[self.module_name]["backward"], timer_ctx.result)
+            
             self.memory_db["activations"] = test_case.set_nested_dict(
                 self.memory_db["activations"],
-                self.op.get_activation_memory(),
+                {self.module_name: self.op.get_activation_memory()},
             )
     
     def get_results(self) -> Tuple[dict, dict]:

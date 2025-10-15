@@ -20,4 +20,4 @@ class TorchProfilerConfig:
     activities: list = None  # if None, will be set to [ProfilerActivity.CPU, ProfilerActivity.CUDA]
     schedule: object = None  # if None, will be set to torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2)
     # on_trace_ready: object = None  # if None, will be set to torch.profiler.tensorboard_trace_handler('./log_dir')
-    output_dir: str = "log_dir"     # will be in `outputs/timestamp/hf_model_name/torch_profile/log_dir`
+    output_dir: str = "log_dir"     # will be in `outputs/timestamp/hf_model_name/torch_profiler/log_dir`

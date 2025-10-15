@@ -2,7 +2,7 @@
 
 Through the testbench of AutoTuner, we can make straight-forward observation of the operators performance.
 
-There are two ways of testbench launching methods: get_data launch and nsys profile launch. The first way means we just use our timers and memory sensors to detect an operators performance and return the data for future use. The latter means we use nsys profile
+There are 3 ways of testbench launching methods: get_data launch, nsys profile launch and torch profiler launch. The first way means we just use our timers and memory sensors to detect an operators performance and return the data for future use. Nsys profile discards our sensors and use NVIDIA nsight system to profile. Torch profiler uses `torch.profiler.profile` API to profile with timeline, stacks and other info.
 
 The design of testbench follows OOP rules.
 
@@ -26,3 +26,28 @@ AutoTuner
 └── utils               # assistence function, to avoid repetition
 ```
 
+## Which operators to be added?
+
+- embedding
+- TransformerBlock
+- TransformerLayer
+- pre_layernorm
+- self_attn
+- rope
+- TEDotProductAttention
+- linear_proj
+- self_attn_bda
+- MLP
+- Norm​
+- fc1_op​
+- activation_op​
+- fc2_op
+- mlp_bda
+- final_layernorm
+- Post process
+
+## How to add operators
+
+Implement operators in `ops` folder and `ops_test` folder, add op to `AutoTuner/testbench/profile/op_mapping.py`.
+
+For inputs, we may need to checkpoint operators' input. But actually, the attention_mask and position_ids are OK to be meaningful, and the hidden_states may be not that useful, so we can generate random hidden_states for these.

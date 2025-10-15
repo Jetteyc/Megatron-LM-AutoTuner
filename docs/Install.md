@@ -39,7 +39,7 @@ Use `verlai/verl:app-verl0.6-transformers4.56.1-sglang0.5.2-mcore0.13.0-te2.2`, 
     - check CXXABI: `ABI_FLAG=$(python -c "import torch; print('TRUE' if torch._C._GLIBCXX_USE_CXX11_ABI else 'FALSE')")`
     - download: https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abi${ABI_FLAG}-cp311-cp311-linux_x86_64.whl
     - install
-- Install TransformerEngine in current repo: `pip install --no-deps -e .`
+- Install TransformerEngine in current repo: `export NVTE_FRAMEWORK=pytorch && pip3 install --resume-retries 999 --no-deps --no-cache-dir --no-build-isolation -e .`
 - Apply patch to TransformerEngine to enable flash_attention: `cd TransformerEngine && git apply ../patches/TransformerEngine.patch`
 - Install Megatron in current repo
 - Install verl in current repo

@@ -26,3 +26,6 @@ Target shapes:
 [Doc in Lark](https://acs-frontier.feishu.cn/wiki/JRfAwjGeMiGmwWk3IM7ct26Tn2e)
 
 Go to [docs directory](./docs/)
+
+- [Quick Start](./docs/Install.md)
+- [Quick Start](./docs/QuickStart.md)

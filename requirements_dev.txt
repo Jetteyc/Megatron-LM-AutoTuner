@@ -21,7 +21,7 @@ dill==0.4.0
 distlib==0.4.0
 einops==0.8.1
 filelock==3.13.1
-flash_attn==2.8.1
+flash_attn==2.8.3
 frozenlist==1.7.0
 fsspec==2024.6.1
 gitdb==4.0.12
@@ -119,6 +119,7 @@ tensorboard-data-server==0.7.2
 tensordict==0.10.0
 tokenizers==0.21.4
 torch==2.8.0+cu128
+torch-tb-profiler==0.4.3
 torchaudio==2.8.0+cu128
 torchdata==0.11.0
 torchvision==0.23.0+cu128

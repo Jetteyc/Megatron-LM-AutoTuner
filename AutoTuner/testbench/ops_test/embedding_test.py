@@ -15,6 +15,7 @@ from AutoTuner.utils.timing import Timer, TimerContext
 
 from ..ops.embedding import LanguageModelEmbeddingForTest
 from .common import TestCommon
+from ..profile.configs.config_struct import ProfileMode
 
 os.environ["NVTE_NVTX_ENABLED"] = "1"
 
@@ -26,7 +27,7 @@ class TestLanguageModelEmbedding(TestCommon):
         hf_config: PretrainedConfig,
         scatter_to_sequence_parallel: bool = True,
         tp_group: Optional[torch.distributed.ProcessGroup] = None,
-        profile_mode: bool = False,
+        profile_mode: int = 0,
         warmup_iters: int = 2,
     ):
         super().__init__(
@@ -38,11 +39,12 @@ class TestLanguageModelEmbedding(TestCommon):
                 hf_config,
                 scatter_to_sequence_parallel=scatter_to_sequence_parallel,
                 tp_group=tp_group,
-                hook_activation=not profile_mode,
+                hook_activation=profile_mode == ProfileMode.collect_data,
             )
         self.module_name = "Embedding"
 
-        self.memory_db["weights"][self.module_name] = memory_tracker_ctx.get_result()
+        if profile_mode == ProfileMode.collect_data:
+            self.memory_db["weights"][self.module_name] = memory_tracker_ctx.get_result()
 
     @override
     def prepare_input(self, test_case: InputTestCase, batch_data_generator: Iterator):

@@ -3,6 +3,8 @@ from AutoTuner.utils.structs import InputTestCase
 from ..configs.config_struct import ProfileConfig
 from .launcher import Launcher
 
+from ..configs.config_struct import ProfileMode
+
 
 class LaunchNsysProfileForOps(Launcher):
     def __init__(
@@ -14,8 +16,8 @@ class LaunchNsysProfileForOps(Launcher):
         override_tf_config_kwargs: dict,
     ):
         assert (
-            profile_config.profile_mode == True
-        ), "Nsys profile should enable profile mode."
+            profile_config.profile_mode == ProfileMode.nsys_profile
+        ), "Nsys profile should enable nsys profile mode."
         super().__init__(
             profile_config=profile_config,
             test_cases=test_cases,

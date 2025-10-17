@@ -230,11 +230,26 @@ def call_launcher(
     if profile_config.profile_mode == ProfileMode.torch_profiler:
         torch_profiler_config_kwargs = {
             "torch_profiler_config": TorchProfilerConfig(
-                log_dir=os.path.join(
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+                with_flops=True,
+                with_modules=True,
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                schedule=torch.profiler.schedule(
+                    wait=0,
+                    warmup=profile_config.warmup_iters,
+                    active=1,
+                    repeat=1,
+                ),
+                output_dir=os.path.join(
                     args.output_dir,
                     args.model_name,
                     "torch_profiler",
-                    f"rank_{torch.distributed.get_rank()}",
+                    # f"rank_{torch.distributed.get_rank()}",
                 )
             )
         }
@@ -247,7 +262,7 @@ def call_launcher(
         **torch_profiler_config_kwargs,
     )
 
-    if profile_config.profile_mode:
+    if profile_config.profile_mode == ProfileMode.nsys_profile or profile_config.profile_mode == ProfileMode.torch_profiler:
         enable_nvtx_profiling()
 
     if args.test_case_idxs is None and args.test_ops_list is None:
@@ -255,7 +270,7 @@ def call_launcher(
     else:
         launcher.run_op_list(args.test_ops_list, args.test_case_idxs)
 
-    if not profile_config.profile_mode:
+    if profile_config.profile_mode == ProfileMode.collect_data:
         total_timing_db, total_memory_db = launcher.return_results()
         output_dir = os.path.join(
             args.output_dir,
@@ -271,7 +286,10 @@ def call_launcher(
         with open(os.path.join(output_dir, "memory_weights.json"), "a+") as fp:
             json.dump(total_memory_db["weights"], fp, indent=4)
         print(f"results dumped to {output_dir}")
-
+    else:
+        print("Profiling finished.")
+        with open(os.path.join(args.output_dir, "args.txt"), "w") as fp:
+            fp.write(str(args))
 
 if __name__ == "__main__":
     print(f"Parsing args ...")

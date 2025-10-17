@@ -43,7 +43,7 @@ class NsysLauncher:
             os.path.join(
                 args.output_dir,
                 args.model_name,
-                "nsys_profile",
+                "nsys",
                 f"rank_{os.environ.get('RANK')}",
             ),
             "-f",

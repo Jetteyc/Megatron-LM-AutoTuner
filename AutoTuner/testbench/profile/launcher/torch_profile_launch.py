@@ -6,6 +6,8 @@ from ..configs.config_struct import ProfileConfig, TorchProfilerConfig
 from ..op_mapping import OP_TEST_MAPPING
 from .launcher import Launcher
 
+from ..configs.config_struct import ProfileMode
+
 
 class LaunchTorchProfileForOps(Launcher):
     def __init__(
@@ -18,8 +20,8 @@ class LaunchTorchProfileForOps(Launcher):
         torch_profiler_config: TorchProfilerConfig,
     ):
         assert (
-            profile_config.profile_mode == True
-        ), "Nsys profile should enable profile mode."
+            profile_config.profile_mode == ProfileMode.torch_profiler
+        ), "Nsys profile should enable torch profiler mode."
         super().__init__(
             profile_config=profile_config,
             test_cases=test_cases,
@@ -35,7 +37,7 @@ class LaunchTorchProfileForOps(Launcher):
             repeat=1,
         )
         self.torch_profiler_config.on_trace_ready = (
-            torch.profiler.tensorboard_trace_handler(self.torch_profiler_config.log_dir)
+            torch.profiler.tensorboard_trace_handler(self.torch_profiler_config.output_dir)
         )
         self.prof = torch.profiler.profile(
             activities=self.torch_profiler_config.activities,
@@ -70,7 +72,7 @@ class LaunchTorchProfileForOps(Launcher):
             op_class_instance.run_test(test_case, batch_data_generator)
         return op_class_instance
 
-    def run_op(self, op_name: str, test_case_idxs: list[int]):
+    def run_op(self, op_name: str, test_case_idxs: list[int], inner_prof: bool = True):
         op_test_class = OP_TEST_MAPPING.get(op_name)
         if op_test_class is None:
             raise ValueError(f"Operator '{op_name}' is not supported.")
@@ -85,26 +87,31 @@ class LaunchTorchProfileForOps(Launcher):
         if test_case_idxs is None:
             test_case_idxs = list(range(len(self.test_cases)))
         test_cases = [self.test_cases[i] for i in test_case_idxs]
-        self.prof.start()
+        if inner_prof:
+            self.prof.start()
         for i in range(self.profile_config.warmup_iters + 1):
             for test_case in test_cases:
                 batch_data_generator = self.datasets.get_batch_generator(
                     test_case.batch_size, test_case.seqlen, test_case.max_token_len
                 )
                 op_class_instance.run_test(test_case, batch_data_generator)
-            self.prof.step()
-        self.prof.stop()
+            if inner_prof:
+                self.prof.step()
+        if inner_prof:
+            self.prof.stop()
         return op_class_instance
 
-    def run_op_list(self, op_name_list: list[str], test_case_idxs: list[int]):
+    def run_op_list(self, op_name_list: list[str], test_case_idxs: list[int], inner_prof: bool = True):
         if op_name_list is None:
             op_name_list = self.all_supported_ops
-        self.prof.start()
+        if not inner_prof:
+            self.prof.start()
         for i in range(self.profile_config.warmup_iters + 1):
             for op_name in op_name_list:
                 print(f"Running operator: {op_name}")
-                self.run_op(op_name, test_case_idxs)
-        self.prof.stop()
+                self.run_op(op_name, test_case_idxs, inner_prof=inner_prof)
+        if not inner_prof:
+            self.prof.stop()
 
     def run_all_supported_ops(self, test_case_idxs: list[int]):
         self.run_op_list(self.all_supported_ops, test_case_idxs)

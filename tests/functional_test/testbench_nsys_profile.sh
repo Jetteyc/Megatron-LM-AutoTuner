@@ -13,8 +13,10 @@ TEST_OPS_LIST=None
 TEST_CASE_IDXES=None
 
 TIMESTAMP_VAR=$(date +"%Y-%m-%d_%H-%M-%S")
-OUTPUT_DIR=outputs/$(TIMESTAMP_VAR)
+OUTPUT_DIR=outputs/${TIMESTAMP_VAR}
 SINGLE_NODES=${1:-False}
+
+mkdir -p "${OUTPUT_DIR}/${MODEL_NAME}/nsys"
 
 export NVTE_NVTX_ENABLED=1
 export CUDA_DEVICE_MAX_CONNECTIONS=1
@@ -37,7 +39,6 @@ DISTRIBUTED_ARGS=(
 PROFILE_ARGS=(
     --model-name $MODEL_NAME
     --test-cases-file $TEST_CASES_FILE
-    --profile-mode
     --output-dir $OUTPUT_DIR
     --profile-mode 1
 )
@@ -53,15 +54,16 @@ fi
 PARALLEL_ARGS=(
     --tensor-model-parallel-size 1
     --pipeline-model-parallel-size 1
-    --virtual-pipeline-model-parallel-size None
+    # --virtual-pipeline-model-parallel-size None
     --context-parallel-size 1
     --expert-parallel-size 1
     --expert-tensor-parallel-size 1
 )
 
 NSYS_ARGS=(
+    --run-as root
     -w true
-    -o "${OUTPUT_DIR}/${MODEL_NAME}/nsight_report"
+    -o "${OUTPUT_DIR}/${MODEL_NAME}/nsys/nsight_report"
     -f true
     -x true
     -t cuda,nvtx,cudnn,cublas,python-gil
@@ -79,7 +81,7 @@ if [ "$SINGLE_NODES" = "True" ]; then
         ${PROFILE_ARGS[@]}
     exit $?
 else
-    nsys profile "${NSYS_ARGS[@]}" \
+    sudo -E nsys profile "${NSYS_ARGS[@]}" \
         torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.profile.main \
             ${PROFILE_ARGS[@]} \
             ${OPTIONAL_PROFILE_ARGS[@]} \

@@ -37,3 +37,5 @@ tensorboard --logdir=outputs/2025-10-17_16-22-50/Qwen/Qwen3-0.6B/torch_profiler 
 ```
 
 Open your browser and go to `http://[ip]:6006/#pytorch_profiler`, you will see the traces in `Views` tabs, use `WASD` to check the traces.
+
+![torch_profiler](./figs/QuickStart/torch_profiler.png)

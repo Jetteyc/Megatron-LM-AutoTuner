@@ -28,6 +28,14 @@ git submodule update --init --recursive
 
 Use `verlai/verl:app-verl0.6-transformers4.56.1-sglang0.5.2-mcore0.13.0-te2.2`, too slow
 
+```bash
+tmux new -s megatron-auto-tuner-0
+bash scripts/docker_robust_pull.sh 
+verlai/verl:app-verl0.6-transformers4.56.1-sglang0.5.2-mcore0.13.0-te2.2
+```
+
+You should use `Ctrl-C` to activate stop-then-continue download
+
 ## Local Development
 
 - CUDA 12.8: Use [runfile installer](https://developer.nvidia.com/cuda-12-8-0-download-archive?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=24.04&target_type=runfile_local)

@@ -16,7 +16,7 @@ TIMESTAMP_VAR=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR=outputs/${TIMESTAMP_VAR}
 SINGLE_NODES=${1:-False}
 
-mkdir -p "${OUTPUT_DIR}/${MODEL_NAME}/nsys"
+mkdir -p "${OUTPUT_DIR}/${MODEL_NAME}/nsys_profile"
 
 export NVTE_NVTX_ENABLED=1
 export CUDA_DEVICE_MAX_CONNECTIONS=1
@@ -63,7 +63,7 @@ PARALLEL_ARGS=(
 NSYS_ARGS=(
     --run-as root
     -w true
-    -o "${OUTPUT_DIR}/${MODEL_NAME}/nsys/nsight_report"
+    -o "${OUTPUT_DIR}/${MODEL_NAME}/nsys_profile/nsight_report"
     -f true
     -x true
     -t cuda,nvtx,cudnn,cublas,python-gil
@@ -81,7 +81,7 @@ if [ "$SINGLE_NODES" = "True" ]; then
         ${PROFILE_ARGS[@]}
     exit $?
 else
-    sudo -E nsys profile "${NSYS_ARGS[@]}" \
+    nsys profile "${NSYS_ARGS[@]}" \
         torchrun ${DISTRIBUTED_ARGS[@]} -m AutoTuner.testbench.profile.main \
             ${PROFILE_ARGS[@]} \
             ${OPTIONAL_PROFILE_ARGS[@]} \

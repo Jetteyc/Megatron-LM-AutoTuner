@@ -39,3 +39,35 @@ tensorboard --logdir=outputs/2025-10-17_16-22-50/Qwen/Qwen3-0.6B/torch_profiler 
 Open your browser and go to `http://[ip]:6006/#pytorch_profiler`, you will see the traces in `Views` tabs, use `WASD` to check the traces.
 
 ![torch_profiler](./figs/QuickStart/torch_profiler.png)
+
+## To Try Nsys Profiler
+
+**NOTE: This function requires to use docker: `verlai/verl:app-verl0.6-transformers4.56.1-sglang0.5.2-mcore0.13.0-te2.2`, since nsys can only work in root mode.**
+
+1. Launch docker:
+
+```bash
+docker create --rm -it --gpus all --shm-size=25GB --name megatron_autotuner -v $(pwd):/workspace/Megatron-LM-AutoTuner --network=host verlai/verl:app-verl0.6-transformers4.56.1-sglang0.5.2-mcore0.13.0-te2.2
+
+docker start megatron_autotuner
+
+docker exec -it megatron_autotuner bash
+```
+
+2. In docker container:
+
+```bash
+cd Megatron-LM-AutoTuner
+
+cd verl && pip install --no-deps -e . && cd ..
+
+bash tests/functional_test/testbench_nsys_profile.sh
+```
+
+3. In your local Mac/PC, download [nsight compute](https://developer.nvidia.com/tools-overview/nsight-compute/get-started)
+
+Open profiled file in path: `outputs/[TIMESTAMP]/Qwen/Qwen3-0.6B/nsys_profile/nsight_report.nsys-rep`
+
+Result:
+
+![nsys_profile_sample](./figs/QuickStart/nsys_result_sample.png)

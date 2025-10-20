@@ -7,6 +7,13 @@ class ProfileMode:
     torch_profiler: int = 2
 
 
+PROFILE_MODEL_MAP = {
+    ProfileMode.collect_data: "collect_data",
+    ProfileMode.nsys_profile: "nsys_profile",
+    ProfileMode.torch_profiler: "torch_profiler",
+}
+
+
 @dataclass
 class ProfileConfig:
     profile_mode: int = (

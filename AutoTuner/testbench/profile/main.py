@@ -11,6 +11,7 @@ from AutoTuner.testbench.profile.configs.config_struct import (
     ProfileConfig,
     ProfileMode,
     TorchProfilerConfig,
+    PROFILE_MODEL_MAP,
 )
 from AutoTuner.testbench.profile.launcher.get_data_launch import (
     LaunchDataCollectionForOps,
@@ -275,7 +276,7 @@ def call_launcher(
         output_dir = os.path.join(
             args.output_dir,
             args.model_name,
-            "collect_data",
+            PROFILE_MODEL_MAP[profile_config.profile_mode],
             f"rank_{torch.distributed.get_rank()}",
         )
         os.makedirs(output_dir, exist_ok=True)
@@ -288,7 +289,7 @@ def call_launcher(
         print(f"results dumped to {output_dir}")
     else:
         print("Profiling finished.")
-        with open(os.path.join(args.output_dir, "args.txt"), "w") as fp:
+        with open(os.path.join(args.output_dir, args.model_name, PROFILE_MODEL_MAP[profile_config.profile_mode], "args.txt"), "w") as fp:
             fp.write(str(args))
 
 if __name__ == "__main__":

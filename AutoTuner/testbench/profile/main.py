@@ -191,6 +191,12 @@ def handle_test_cases(args) -> List[InputTestCase]:
     test_cases = []
     for json_test_case in json_test_cases["cases"]:
         test_case = InputTestCase(**json_test_case)
+        test_case.tensor_model_parallel_size = args.tensor_model_parallel_size
+        test_case.pipeline_model_parallel_size = args.pipeline_model_parallel_size
+        test_case.virtual_pipeline_model_parallel_size = args.virtual_pipeline_model_parallel_size
+        test_case.context_parallel_size = args.context_parallel_size
+        test_case.expert_parallel_size = args.expert_parallel_size
+        test_case.expert_tensor_parallel_size = args.expert_tensor_parallel_size
         test_cases.append(test_case)
     return test_cases
 

@@ -1,7 +1,7 @@
 from AutoTuner.utils.nested_dict import NestedDict
 from AutoTuner.utils.structs import InputTestCase
 
-from ..configs.config_struct import ProfileConfig
+from ..configs.config_struct import ProfileConfig, ProfileMode
 from .launcher import Launcher
 
 
@@ -15,7 +15,7 @@ class LaunchDataCollectionForOps(Launcher):
         override_tf_config_kwargs: dict,
     ):
         assert (
-            profile_config.profile_mode == False
+            profile_config.profile_mode == ProfileMode.collect_data
         ), "Data collection should not be in profile mode."
         super().__init__(
             profile_config=profile_config,
@@ -30,7 +30,7 @@ class LaunchDataCollectionForOps(Launcher):
 
     def run_op(self, op_name: str, test_case_idxs: list[int]):
         op_class_instance = super().run_op(op_name, test_case_idxs=test_case_idxs)
-        timing_db, memory_db = op_class_instance.get_results()
+        timing_db, memory_db= op_class_instance.get_results()
         self.total_timing_db.merge(timing_db)
         self.total_memory_db["weights"].update(memory_db["weights"])
         self.total_memory_db["activations"].merge(memory_db["activations"])

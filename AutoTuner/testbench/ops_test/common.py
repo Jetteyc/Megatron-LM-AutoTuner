@@ -16,12 +16,13 @@ from AutoTuner.utils.structs import InputTestCase
 from AutoTuner.utils.timing import Timer, TimerContext
 
 from ..ops.common import CommonOpsForTest
+from ..ops.theoretical_base import TheoreticalCalculation
 from ..profile.configs.config_struct import ProfileMode
 
 os.environ["NVTE_NVTX_ENABLED"] = "1"
+GPU_PEAK_FLOPS = 35.58e12
 
-
-class TestCommon(ABC):
+class TestCommon(TheoreticalCalculation):
     def __init__(
         self,
         hf_config: PretrainedConfig,
@@ -73,7 +74,7 @@ class TestCommon(ABC):
         self.profile_mode = profile_mode
         self.warmup_iters = warmup_iters
 
-    @abc.abstractclassmethod
+    @abc.abstractmethod
     def prepare_input(self, test_case: InputTestCase, batch_data_generator: Iterator):
         pass
 
@@ -136,8 +137,17 @@ class TestCommon(ABC):
             name = f"{self.module_name} forward {test_case}"
             with TimerContext(name) as timer_ctx:
                 output = self.op(*inputs)
+            
+            theo_flops = self.calc_theoretical_flops(test_case)
+            forward_flops_estimated = theo_flops.get("forward", None) if theo_flops else None
+            estimated_forward_time = forward_flops_estimated / GPU_PEAK_FLOPS
             self.timing_db[self.module_name]["forward"] = test_case.set_nested_dict(
-                self.timing_db[self.module_name]["forward"], timer_ctx.result
+                self.timing_db[self.module_name]["forward"], 
+                {
+                    "real": timer_ctx.result, 
+                    "estimated_flops": forward_flops_estimated,
+                    "estimated_time": estimated_forward_time
+                }
             )
 
             # Call backward function - force output to require grad
@@ -150,11 +160,26 @@ class TestCommon(ABC):
             self.timing_db[self.module_name]["backward"] = test_case.set_nested_dict(
                 self.timing_db[self.module_name]["backward"], timer_ctx.result
             )
+            backward_flops_estimated = theo_flops.get("backward", None) if theo_flops else None
 
-            self.memory_db["activations"] = test_case.set_nested_dict(
-                self.memory_db["activations"],
-                {self.module_name: self.op.get_activation_memory()},
+            self.timing_db[self.module_name]["backward"] = test_case.set_nested_dict(
+                self.timing_db[self.module_name]["backward"],
+                {"real": timer_ctx.result, "estimated_flops": backward_flops_estimated}
             )
+            
+            # Calculate theoretical memory
+            theo_mem = self.calc_theoretical_memory(test_case)
+            real_activation_mem_dict = self.op.get_activation_memory()
+
+            if theo_mem and "activations" in theo_mem:
+                for key, real_value in real_activation_mem_dict.items():
+                    estimated_value = theo_mem["activations"].get(key, None)
+                    path = f"{self.module_name}.{key}"
+                    self.memory_db["activations"] = test_case.set_nested_dict(
+                        self.memory_db["activations"],
+                        {path: {"real": real_value, "estimated": estimated_value}},
+                    )
+
 
     def get_results(self) -> Tuple[dict, dict]:
         assert (

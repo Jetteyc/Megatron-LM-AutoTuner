@@ -40,6 +40,7 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
         CommonOpsForTest.__init__(
             self,
             hook_activation=hook_activation,
+            hook_type='forward_output',
             module_name="LanguageModelEmbedding",
             logging_level=logging.INFO,
         )
@@ -116,9 +117,4 @@ class LanguageModelEmbeddingForTest(LanguageModelEmbedding, CommonOpsForTest):
     def forward(
         self, input_ids: Tensor, position_ids: Tensor, tokentype_ids: int = None
     ) -> Tensor:
-        self.activation_hook.clear()
-        with torch.autograd.graph.saved_tensors_hooks(
-            self.activation_hook.save_hook, self.activation_hook.load_hook
-        ):
-            ret = self._forward(input_ids, position_ids, tokentype_ids)
-        return ret
+        return self._forward(input_ids, position_ids, tokentype_ids)

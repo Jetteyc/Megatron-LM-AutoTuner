@@ -141,7 +141,10 @@ class TestCommon(TheoreticalCalculation):
             self.timing_db[self.module_name]["forward"] = test_case.set_nested_dict(
                 self.timing_db[self.module_name]["forward"], timer_ctx.result
             )
-
+            measured_activation_mem = self.op.get_activation_memory()
+            if torch.distributed.is_initialized() and torch.distributed.get_rank() == 0:
+                print(f"[DEBUG 2/3 | Value Retrieval] run_test retrieved memory: {measured_activation_mem} bytes")
+            
             # Call backward function - force output to require grad
             output.requires_grad_(True)
             name = f"{self.module_name} backward {test_case}"
@@ -152,10 +155,12 @@ class TestCommon(TheoreticalCalculation):
             self.timing_db[self.module_name]["backward"] = test_case.set_nested_dict(
                 self.timing_db[self.module_name]["backward"], timer_ctx.result
             )
-
+            if torch.distributed.is_initialized() and torch.distributed.get_rank() == 0:
+                print(f"[DEBUG 3/3 | Value Before Save] Value just before saving: {measured_activation_mem} bytes")
+            
             self.memory_db["activations"] = test_case.set_nested_dict(
                 self.memory_db["activations"],
-                {self.module_name: self.op.get_activation_memory()},
+                {self.module_name: measured_activation_mem},
             )
             
             # Calculate theoretical memory

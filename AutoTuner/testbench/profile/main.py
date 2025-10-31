@@ -178,6 +178,16 @@ def parse_args():
         help="output directory to save the database results and nsys profile results, actual output_dir is args.output_dir/model_name/profile_mode",
     )
 
+    parser.add_argument(
+        "--theoretical-flops",
+        action="store_true",  # 不传入该参数时为 False，传入时为 True
+        help="Whether to use theoretical FLOPS calculation"
+    )
+    parser.add_argument(
+        "--theoretical-activations",
+        action="store_true",
+        help="Whether to use theoretical activations calculation"
+    )
     # distributed
     parser = parse_distributed_args(parser)
     args = parser.parse_args()
@@ -266,6 +276,8 @@ def call_launcher(
         model_name=args.model_name,
         override_model_kwargs=override_model_config,
         override_tf_config_kwargs=override_tf_config,
+        theoretical_flops=args.theoretical_flops,
+        theoretical_activations=args.theoretical_activations,
         **torch_profiler_config_kwargs,
     )
 

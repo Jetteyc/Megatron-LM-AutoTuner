@@ -31,9 +31,15 @@ class TestLanguageModelEmbedding(TestCommon):
         tp_group: Optional[torch.distributed.ProcessGroup] = None,
         profile_mode: int = 0,
         warmup_iters: int = 2,
+        theoretical_flops: bool = False,
+        theoretical_activations: bool = False,
     ):
         super().__init__(
-            hf_config=hf_config, profile_mode=profile_mode, warmup_iters=warmup_iters
+            hf_config=hf_config, 
+            profile_mode=profile_mode, 
+            warmup_iters=warmup_iters,
+            theoretical_flops=theoretical_flops,
+            theoretical_activations=theoretical_activations,
         )
         self.module_name = "Embedding"
 

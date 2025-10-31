@@ -23,14 +23,14 @@ from ..profile.configs.config_struct import ProfileMode
 
 os.environ["NVTE_NVTX_ENABLED"] = "1"
 GPU_PEAK_FLOPS = 35.58e12
-THEORETICAL_FLOPS = False
-THEORETICAL_ACTIVATIONS = False
 class TestCommon(TheoreticalCalculation):
     def __init__(
         self,
         hf_config: PretrainedConfig,
         profile_mode: int = 0,
         warmup_iters: int = 2,
+        theoretical_flops: bool = False,
+        theoretical_activations: bool = False
     ):
         super().__init__()
         self.op: CommonOpsForTest = None
@@ -42,6 +42,9 @@ class TestCommon(TheoreticalCalculation):
         self.model_config = hf_config
         self.profile_mode = profile_mode
         self.warmup_iters = warmup_iters
+        self.theoretical_flops = theoretical_flops
+        self.theoretical_activations = theoretical_activations
+        
         """
         timing_db structure:
         {
@@ -161,7 +164,7 @@ class TestCommon(TheoreticalCalculation):
         if self.profile_mode == ProfileMode.collect_data:
             avg_forward_time = average_microbatch_metric(self.micro_batch_results, 'forward')
             avg_backward_time = average_microbatch_metric(self.micro_batch_results, 'backward')
-            if THEORETICAL_FLOPS:
+            if self.theoretical_flops:
                 theo_flops = self.calc_theoretical_flops(test_case)
                 forward_flops = theo_flops.get("forward", 0)
                 backward_flops = theo_flops.get("backward", 0)
@@ -195,7 +198,7 @@ class TestCommon(TheoreticalCalculation):
                     f"avg {avg_backward_time:.6f}s"
                 )
             avg_activation_bytes = average_microbatch_metric(self.micro_batch_results, 'activation_memory')
-            if THEORETICAL_ACTIVATIONS:
+            if self.theoretical_activations:
 
                 theo_mem = self.calc_theoretical_memory(test_case)
                 estimated_activations = theo_mem.get("activations", {}).get("activations", 0)

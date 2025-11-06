@@ -256,6 +256,18 @@ def call_launcher(
         launcher_cls = LaunchTorchProfileForOps
     else:
         raise ValueError(f"Unsupported profile mode: {profile_config.profile_mode}")
+    
+    launcher_kwargs = {
+        "profile_config": profile_config,
+        "test_cases": test_cases,
+        "model_name": args.model_name,
+        "override_model_kwargs": override_model_config,
+        "override_tf_config_kwargs": override_tf_config,
+    }
+    if profile_config.profile_mode == ProfileMode.collect_data:
+        launcher_kwargs["theoretical_flops"] = args.theoretical_flops
+        launcher_kwargs["theoretical_activations"] = args.theoretical_activations
+
     torch_profiler_config_kwargs = {}
     if profile_config.profile_mode == ProfileMode.torch_profiler:
         torch_profiler_config_kwargs = {
@@ -283,16 +295,8 @@ def call_launcher(
                 ),
             )
         }
-    launcher = launcher_cls(
-        profile_config,
-        test_cases,
-        model_name=args.model_name,
-        override_model_kwargs=override_model_config,
-        override_tf_config_kwargs=override_tf_config,
-        theoretical_flops=args.theoretical_flops,
-        theoretical_activations=args.theoretical_activations,
-        **torch_profiler_config_kwargs,
-    )
+        launcher_kwargs.update(torch_profiler_config_kwargs)
+    launcher = launcher_cls(**launcher_kwargs)
 
     if (
         profile_config.profile_mode == ProfileMode.nsys_profile

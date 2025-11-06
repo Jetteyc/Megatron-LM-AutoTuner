@@ -4,15 +4,15 @@ from functools import lru_cache
 
 GPU_SPECS_DATABASE = {
     # Ampere Architecture (30 Series & A100)
-    "NVIDIA A100-SXM4-80GB": 156.0,
-    "NVIDIA A100-PCIE-40GB": 156.0,
+    "NVIDIA A100-SXM4-80GB": 312.0,
+    "NVIDIA A100-PCIE-40GB": 312.0,
     "NVIDIA GeForce RTX 3090": 71.16,
-    "NVIDIA GeForce RTX 3080 Ti": 68.2,
-    "NVIDIA GeForce RTX 3080": 59.54,
-    
+    "NVIDIA GeForce RTX 3080 Ti": 68.5, # 修正为更精确的~68.5
+    "NVIDIA GeForce RTX 3080": 59.6,  # 修正为更精确的~59.6
+
     # Hopper Architecture (H-Series)
-    "NVIDIA H100 PCIe": 378.0,
-    "NVIDIA H100 SXM5": 495.0,
+    "NVIDIA H100 PCIe": 756.0,
+    "NVIDIA H100 SXM5": 989.0,
 
     # Ada Lovelace Architecture (40 Series & L40)
     "NVIDIA GeForce RTX 4090": 165.16,
@@ -60,7 +60,7 @@ def get_gpu_peak_flops() -> float:
         tflops = GPU_SPECS_DATABASE.get(gpu_name)
         
         if tflops:
-            print(f"Detected GPU: {gpu_name}. Using {tflops} TFLOPS (FP32).")
+            print(f"Detected GPU: {gpu_name}. Using {tflops} TFLOPS (BF16).")
             return tflops * 1e12
         else:
             print(f"Warning: GPU '{gpu_name}' not found in specs database. Using default PEAK_FLOPS.")

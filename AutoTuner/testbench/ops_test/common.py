@@ -145,6 +145,10 @@ class TestCommon(TheoreticalCalculation):
                 output = self.op(*inputs)
             self.micro_batch_results[-1]["forward"] = timer_ctx.elapsed_time
 
+            # Notice that an operator may have multiple outputs
+            if isinstance(output, tuple):
+                output = output[0]
+
             # Call backward function - force output to require grad
             output.requires_grad_(True)
             with TimerContext() as timer_ctx:
@@ -152,7 +156,6 @@ class TestCommon(TheoreticalCalculation):
                 loss = output.sum()
                 loss.backward()
             self.micro_batch_results[-1]["backward"] = timer_ctx.elapsed_time
-
             self.micro_batch_results[-1][
                 "activation_memory"
             ] = self.op.activation_hook.get_activation_memory()

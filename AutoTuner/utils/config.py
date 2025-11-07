@@ -2,6 +2,7 @@ import os
 from typing import Dict
 
 import torch
+from megatron.core.transformer.enums import AttnBackend
 from transformers import AutoConfig
 
 from verl.models.mcore.registry import hf_to_mcore_config
@@ -28,5 +29,6 @@ def get_mcore_model_config(
 def get_mcore_model_config_from_hf_config(
     hf_config: str, dtype: torch.dtype = torch.bfloat16, **override_tf_config_kwargs
 ) -> Dict:
+    override_tf_config_kwargs["attention_backend"] = AttnBackend.flash
     mcore_config = hf_to_mcore_config(hf_config, dtype, **override_tf_config_kwargs)
     return mcore_config

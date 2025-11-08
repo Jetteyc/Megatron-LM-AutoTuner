@@ -28,6 +28,7 @@ class TestCommon(TheoreticalCalculation):
     def __init__(
         self,
         hf_config: PretrainedConfig,
+        # snapshot_file_name: str,
         profile_mode: int = 0,
         warmup_iters: int = 2,
         theoretical_flops: bool = False,
@@ -45,6 +46,7 @@ class TestCommon(TheoreticalCalculation):
         self.warmup_iters = warmup_iters
         self.theoretical_flops = theoretical_flops
         self.theoretical_activations = theoretical_activations
+        # self.snapshot_file_name = snapshot_file_name
         
         """
         timing_db structure:
@@ -116,14 +118,19 @@ class TestCommon(TheoreticalCalculation):
             When using torch profiler, we do warmup outside
             """
 
+            # snapshot_file_name = self.snapshot_file_name
+            # torch.cuda.memory._snapshot()
             # Forward pass
             output = self.op(*inputs)
 
+            # torch.cuda.memory._snapshot()
             # Backward pass
             output.requires_grad_(True)
             nvtx_range_push("backward")
+            # torch.cuda.memory._snapshot()
             output.sum().backward()
             nvtx_range_pop("backward")
+            # torch.cuda.memory._snapshot()
         else:
             """
             When collecting data

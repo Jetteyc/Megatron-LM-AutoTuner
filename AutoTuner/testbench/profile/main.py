@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from typing import List
-
+from verl.utils.memory_utils import enable_memory_visualize, MemorySnapshotSampler
 import torch
 
 from AutoTuner.testbench.profile.configs.config_struct import (
@@ -327,6 +327,7 @@ def call_launcher(
         print(f"results dumped to {output_dir}")
     else:
         print("Profiling finished.")
+    if torch.distributed.get_rank() == 0:
         with open(
             os.path.join(
                 args.output_dir,

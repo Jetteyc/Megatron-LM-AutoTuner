@@ -33,6 +33,7 @@ class TestLanguageModelEmbedding(TestCommon):
         warmup_iters: int = 2,
         theoretical_flops: bool = False,
         theoretical_activations: bool = False,
+        # snapshot_file_name: str = None,
     ):
         super().__init__(
             hf_config=hf_config,
@@ -40,6 +41,7 @@ class TestLanguageModelEmbedding(TestCommon):
             warmup_iters=warmup_iters,
             theoretical_flops=theoretical_flops,
             theoretical_activations=theoretical_activations,
+            # snapshot_file_name=snapshot_file_name,
         )
         self.module_name = "Embedding"
 

@@ -75,6 +75,6 @@ tar -xzf ~/megatron-lm-autotuner.tar.gz -C ~/miniconda3/envs/megatron-lm-autotun
 conda activate megatron-lm-autotuner
 conda-unpack
 # Check for packages with incorrect paths
-pip list -e
+pip list --editable
 # Reinstall packages with path errors
 ```

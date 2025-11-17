@@ -76,5 +76,6 @@ conda activate megatron-lm-autotuner
 conda-unpack
 # Check for packages with incorrect paths
 pip list --editable
-# Reinstall packages with path errors
+# For each package with a path error, reinstall it using:
+pip install -e /path/to/package
 ```

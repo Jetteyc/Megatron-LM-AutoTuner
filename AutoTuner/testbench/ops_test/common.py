@@ -21,7 +21,7 @@ from AutoTuner.utils.timing import Timer, TimerContext
 from AutoTuner.utils.tp_overlap import initialize_tp_communicators, destroy_ub
 
 from ..ops.common import CommonOpsForTest
-from ..ops.theoretical_base import TheoreticalCalculation
+from .theoretical_base import TheoreticalCalculation
 from ..profile.configs.config_struct import ProfileMode
 
 os.environ["NVTE_NVTX_ENABLED"] = "1"

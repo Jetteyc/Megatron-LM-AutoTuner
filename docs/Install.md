@@ -54,7 +54,7 @@ You should use `Ctrl-C` to activate stop-then-continue download
 
 ## Environment Migration
 
-If you have an existing environment archive (e.g., megatron-lm-autotuner.tar.gz), you can quickly reuse it with the following steps
+If you have an existing environment archive (e.g., megatron-lm-autotuner.tar.gz), you can quickly reuse it with the following steps:
 
 - Copy the archive and adjust permissions
 

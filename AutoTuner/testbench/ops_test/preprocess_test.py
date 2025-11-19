@@ -126,7 +126,7 @@ class TestPreprocess(TestCommon):
     def calculate_tokens(
         self, test_case: InputTestCase, micro_batch: TensorDict, inputs: Any
     ) -> int:
-        attention_mask = micro_batch["input_ids"].shape[0]
+        attention_mask = micro_batch["attention_mask"]
         return attention_mask.sum().item()
 
     @override

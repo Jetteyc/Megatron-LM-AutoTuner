@@ -57,8 +57,8 @@ class TestLanguageModelEmbedding(TestCommon):
                 )
 
             detailed_mem_report = memory_tracker_ctx.get_result()
-            vocab_size = self.model_config.vocab_size
-            hidden_size = self.model_config.hidden_size
+            vocab_size = self.hf_config.vocab_size
+            hidden_size = self.hf_config.hidden_size
             tp_size = mpu.get_tensor_model_parallel_world_size()
             embedding_weight = self.op.word_embeddings.weight
             bytes_per_param = torch.finfo(embedding_weight.dtype).bits // 8
@@ -97,7 +97,7 @@ class TestLanguageModelEmbedding(TestCommon):
     def calculate_tokens(
         self, test_case: InputTestCase, micro_batch: TensorDict, inputs: Any
     ) -> int:
-        attention_mask = micro_batch["input_ids"].shape[0]
+        attention_mask = micro_batch["attention_mask"]
         return attention_mask.sum().item()
 
     @override
@@ -106,10 +106,10 @@ class TestLanguageModelEmbedding(TestCommon):
         Calculate theoretical memory usage from the perspective of a single rank.
         """
         # Get dimensions and configuration
-        hidden_size = self.model_config.hidden_size
+        hidden_size = self.hf_config.hidden_size
         micro_batch_size = test_case.micro_batch_size
         seq_len = test_case.seqlen
-        dtype = getattr(self.model_config, "dtype", torch.float16)
+        dtype = getattr(self.hf_config, "dtype", torch.float16)
         bytes_per_param = torch.tensor([], dtype=dtype).element_size()
 
         # Get all parallel parameters
@@ -133,7 +133,7 @@ class TestLanguageModelEmbedding(TestCommon):
         """
         micro_batch_size = test_case.micro_batch_size
         seq_len = test_case.seqlen
-        hidden_size = self.model_config.hidden_size
+        hidden_size = self.hf_config.hidden_size
         cp_size = test_case.context_parallel_size
 
         local_seq_len = seq_len // cp_size

@@ -30,12 +30,14 @@ class NestedDict(dict):
         # assert self.get_depth() == other.get_depth(), f"NestedDict depth mismatch, {self.get_depth()} != {other.get_depth()}."
 
         for k, v in other.items():
-            if isinstance(v, NestedDict) and isinstance(self.get(k), NestedDict):
-                # 递归合并
-                self[k].merge(v)
-            else:
-                # 覆盖值
-                self[k] = v
+            if k in self:
+                if isinstance(v, (dict, NestedDict)) and isinstance(self[k], (dict, NestedDict)):
+                    if not isinstance(self[k], NestedDict):
+                        self[k] = NestedDict(self[k])
+                    source = v if isinstance(v, NestedDict) else NestedDict(v)
+                    self[k].merge(source)
+                    continue
+            self[k] = v
         return self
 
     def to_dict(self):

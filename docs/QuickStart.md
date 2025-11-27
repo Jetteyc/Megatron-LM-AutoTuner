@@ -21,6 +21,19 @@ The outputs like:
 rank_0  rank_1  rank_2  rank_3
 ```
 
+Theoretical weights, activations, and FLOPS are generated synchronously (profile-mode=0) and inserted into memory_activation.json, memory_weights.json, timing.json alongside real values (format: {"real": "...", "estimated": "..."}).
+
+Optional CLI args: 
+
+```sh
+--theoretical-flops true # Enable FLOPS estimation
+--theoretical-activations false # Disable activation estimation
+```
+
+Default behavior: Weights estimation enabled; activations estimation enabled; FLOPS estimation disabled.
+
+Built on the TheoreticalCalculation abstract base class (in `AutoTuner/testbench/ops_test/theoretical_base.py`), with per-op implementations integrated into data collection.
+
 ## To Try Torch Profiler
 
 Run [tests/functional_test/testbench_torch_profile.sh](tests/functional_test/testbench_torch_profile.sh), modify the configs to follow your environment.
@@ -43,6 +56,14 @@ tensorboard --logdir=outputs/2025-10-17_16-22-50/Qwen/Qwen3-0.6B/torch_profiler 
 Open your browser and go to `http://[ip]:6006/#pytorch_profiler`, you will see the traces in `Views` tabs, use `WASD` to check the traces.
 
 ![torch_profiler](./figs/QuickStart/torch_profiler.png)
+
+Memory snapshot is saved to memory_snapshot/ directory under the same trace output path after all ops execution.  
+For single op snapshot, specify one op in TEST_OPS_LIST of tests/functional_test/test_env.sh.  
+Visualize snapshots via https://docs.pytorch.org/memory_viz
+
+![pytorch_memory_viz_snapshot](./figs/QuickStart/pytorch_memory_viz_snapshot_sample.png)
+
+Backed by verl.utils.memory_utils (imported in `AutoTuner/testbench/profile/launcher/torch_profile_launch.py`), triggered after run_op_list execution.
 
 ## To Try Nsys Profiler
 

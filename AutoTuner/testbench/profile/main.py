@@ -9,6 +9,7 @@ import torch
 
 from AutoTuner.testbench.profile.configs.config_struct import (
     PROFILE_MODEL_MAP,
+    MemorySnapshotConfig,
     ProfileConfig,
     ProfileMode,
     TorchProfilerConfig,
@@ -18,6 +19,9 @@ from AutoTuner.testbench.profile.launcher.get_data_launch import (
 )
 from AutoTuner.testbench.profile.launcher.nsys_profile_launch import (
     LaunchNsysProfileForOps,
+)
+from AutoTuner.testbench.profile.launcher.torch_memory_snapshot_launch import (
+    LaunchTorchMemorySnapshotForOps,
 )
 from AutoTuner.testbench.profile.launcher.torch_profile_launch import (
     LaunchTorchProfileForOps,
@@ -284,6 +288,8 @@ def call_launcher(
         launcher_cls = LaunchNsysProfileForOps
     elif profile_config.profile_mode == ProfileMode.torch_profiler:
         launcher_cls = LaunchTorchProfileForOps
+    elif profile_config.profile_mode == ProfileMode.torch_memory_snapshot:
+        launcher_cls = LaunchTorchMemorySnapshotForOps
     else:
         raise ValueError(f"Unsupported profile mode: {profile_config.profile_mode}")
 
@@ -327,6 +333,21 @@ def call_launcher(
             )
         }
         launcher_kwargs.update(torch_profiler_config_kwargs)
+
+    memory_snapshot_config_kwargs = {}
+    if profile_config.profile_mode == ProfileMode.torch_memory_snapshot:
+        memory_snapshot_config_kwargs = {
+            "memory_snapshot_config": MemorySnapshotConfig(
+                snapshot_interval=1,
+                output_dir=os.path.join(
+                    args.output_dir,
+                    args.model_name,
+                    "memory_snapshots",
+                    # f"rank_{torch.distributed.get_rank()}",
+                ),
+            )
+        }
+        launcher_kwargs.update(memory_snapshot_config_kwargs)
     launcher = launcher_cls(**launcher_kwargs)
 
     if (

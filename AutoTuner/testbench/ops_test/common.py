@@ -1,4 +1,5 @@
 import abc
+import gc
 import os
 from abc import ABC
 from typing import Any, Iterator, List, Optional, Tuple
@@ -135,7 +136,7 @@ class TestCommon(TheoreticalCalculation):
                         output = output[0]
                     output.requires_grad_(True)
                     output.sum().backward(retain_graph=True)
-                    self.op.zero_grad()
+                    self.op.zero_grad(set_to_none=True)
 
             torch.cuda.synchronize()
             torch.distributed.barrier()
@@ -159,8 +160,11 @@ class TestCommon(TheoreticalCalculation):
             if self.cur_iters < self.profile_iters:
                 check_error(cudart().cudaProfilerStop())
                 self.cur_iters += 1
-            self.op.zero_grad()
-        elif self.profile_mode == ProfileMode.torch_profiler:
+            self.op.zero_grad(set_to_none=True)
+        elif (
+            self.profile_mode == ProfileMode.torch_profiler
+            or self.profile_mode == ProfileMode.torch_memory_snapshot
+        ):
             """
             When using torch profiler, we do warmup outside
             """
@@ -179,6 +183,7 @@ class TestCommon(TheoreticalCalculation):
             torch.distributed.barrier()
             output.sum().backward()
             nvtx_range_pop("backward")
+            self.cur_iters += 1
         else:
             """
             When collecting data
@@ -190,7 +195,14 @@ class TestCommon(TheoreticalCalculation):
             torch.cuda.reset_peak_memory_stats()
             if self.warmup_iters > 0:
                 for _ in range(self.warmup_iters):
-                    self.op(*inputs)
+                    outputs = self.op(*inputs)
+                    if isinstance(outputs, tuple):
+                        outputs = outputs[0]
+                    outputs.requires_grad_(True)
+                    loss = outputs.sum()
+                    loss.backward()
+                    self.op.zero_grad(set_to_none=True)
+                del outputs
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
@@ -215,6 +227,8 @@ class TestCommon(TheoreticalCalculation):
             self.micro_batch_results[-1][
                 "activation_memory"
             ] = self.op.activation_hook.get_activation_memory()
+            del loss
+            self.cur_iters += 1
         if (
             mpu.get_tensor_model_parallel_world_size() > 1
             and self.tf_config.tp_comm_overlap
@@ -223,12 +237,23 @@ class TestCommon(TheoreticalCalculation):
             and tokens > 0
         ):
             destroy_ub()
+        for input in inputs:
+            if isinstance(input, torch.Tensor):
+                del input
+        if isinstance(output, torch.Tensor):
+            del output
+        self.op.zero_grad()
+        gc.collect()
+        torch.cuda.empty_cache()
 
     def run_test(self, test_case: InputTestCase, batch_data_generator: Iterator):
         for batch_data in batch_data_generator:
             inputs = self.prepare_input(test_case, batch_data)
             tokens = self.calculate_tokens(test_case, batch_data, inputs)
             self.run_micro_batch(test_case, inputs, tokens)
+            del inputs
+            gc.collect()
+            torch.cuda.empty_cache()
 
         if self.profile_mode == ProfileMode.collect_data:
             avg_forward_time = average_microbatch_metric(

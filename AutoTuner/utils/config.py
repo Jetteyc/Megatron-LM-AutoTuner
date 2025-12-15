@@ -23,7 +23,7 @@ def get_hf_model_config(model_name: str, **kwargs) -> AutoConfig:
         if hasattr(config, "quantization_config"):
             delattr(config, "quantization_config")
             warnings.warn(
-                f"quantization is not supported for now"
+                "quantization is not supported for now"
             )
     return config
 

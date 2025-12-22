@@ -1,3 +1,6 @@
+from AutoTuner.testbench.ops_test.column_parallel_linear_test import (
+    TestColumnParallelLinear,
+)
 from AutoTuner.testbench.ops_test.decoder_test_hidden import TestDecoderWithHiddenInputs
 from AutoTuner.testbench.ops_test.dot_product_attention_test import (
     TestTEDotProductAttention,
@@ -24,4 +27,5 @@ OP_TEST_MAPPING = {
     "TEDotProductAttention": TestTEDotProductAttention,
     "MLPDense": TestMLPDense,
     "MoELayer": TestMoELayer,
+    "ColumnParallelLinear": TestColumnParallelLinear,
 }

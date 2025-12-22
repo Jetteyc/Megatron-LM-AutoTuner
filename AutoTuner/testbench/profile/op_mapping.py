@@ -1,3 +1,4 @@
+from AutoTuner.testbench.ops_test.atten_with_cp_test import TestAttnFuncWithCPAndKVP2P
 from AutoTuner.testbench.ops_test.column_parallel_linear_test import (
     TestColumnParallelLinear,
 )
@@ -27,5 +28,6 @@ OP_TEST_MAPPING = {
     "TEDotProductAttention": TestTEDotProductAttention,
     "MLPDense": TestMLPDense,
     "MoELayer": TestMoELayer,
+    "AttenWithCP": TestAttnFuncWithCPAndKVP2P,
     "ColumnParallelLinear": TestColumnParallelLinear,
 }

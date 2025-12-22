@@ -29,3 +29,22 @@ Go to [docs directory](./docs/)
 
 - [Install](./docs/Install.md)
 - [Quick Start](./docs/QuickStart.md)
+
+## Submodules
+
+### Original Open-Source Repos
+
+- Megatron-LM
+- TransformerEngine
+- verl
+
+### Enhanced Repos
+
+- [Megatron-LM-Enhanced](https://github.com/ETOgaosion/Megatron-LM)
+    - @Jetteyc : NetworkEngine
+    - @ETOgaosion , @cyn1456492382 , @miceforrat : All basic functions and Auto-Tuner connection
+- [TransformerEngine-Enhanced](https://github.com/ETOgaosion/TransformerEngine)
+    - @Jetteyc , @Knight-of-Thunder : Context Parallel based on NVSHMEM Async Transport
+- [verl-enhanced](https://github.com/ETOgaosion/verl)
+    - @ETOgaosion , @cyn1456492382 , @miceforrat : balanced data resharding
+    - @LeonardW-sl : Scalable Train-Infer Data & Weights Transport

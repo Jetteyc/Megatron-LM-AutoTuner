@@ -15,6 +15,7 @@ from AutoTuner.testbench.ops_test.postprocess_test import TestPostprocess
 from AutoTuner.testbench.ops_test.preprocess_test import TestPreprocess
 from AutoTuner.testbench.ops_test.row_linear_test import TestTERowParallelLinear
 from AutoTuner.testbench.ops_test.self_attention_test import TestSelfAttention
+from AutoTuner.testbench.ops_test.shared_expert_mlp_test import TestSharedExpertMLP
 from AutoTuner.testbench.ops_test.te_grouped_mlp_test import TestTEGroupedMLP
 from AutoTuner.testbench.ops_test.transformers_layer_test import TestTransformerLayer
 
@@ -30,6 +31,7 @@ OP_TEST_MAPPING = {
     "TEDotProductAttention": TestTEDotProductAttention,
     "MLPDense": TestMLPDense,
     "MoELayer": TestMoELayer,
+    "SharedExpertMLP": TestSharedExpertMLP,
     "TEGroupedMLP": TestTEGroupedMLP,
     "TERowParallelLinear": TestTERowParallelLinear,
     "AttenWithCP": TestAttnFuncWithCPAndKVP2P,

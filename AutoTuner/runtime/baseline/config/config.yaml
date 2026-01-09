@@ -1,0 +1,4 @@
+defaults:
+  - ../../../../verl/verl/trainer/config/model@actor_rollout_ref.model: hf_model
+  - ../../../../verl/verl/trainer/config/actor@actor_rollout_ref.actor: megatron_actor
+  - _self_

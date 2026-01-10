@@ -19,7 +19,7 @@ tokenizer_path: /data/common/models/Qwen/Qwen2.5-0.5B
 use_shm: False
 
 # whether to trust remote code.
-trust_remote_code: False
+trust_remote_code: True
 
 # custom chat template for the model
 custom_chat_template: null

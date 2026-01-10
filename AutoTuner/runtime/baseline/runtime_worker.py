@@ -7,267 +7,68 @@ from functools import partial
 from verl.workers.utils.losses import ppo_loss
 from verl.single_controller.base import Worker
 from verl.single_controller.base.decorator import Dispatch, make_nd_compute_dataproto_dispatch_fn, register
+import torch
 
+def _build_megatron_module(self):
+    from verl.utils.megatron_utils import (
+        McoreModuleWrapperConfig,
+        make_megatron_module,
+    )
+    from verl.utils.model import print_model_size
 
-# def _init_dist_if_needed(timeout_second: Optional[int] = None) -> None:
-#     """Initialize torch.distributed for torchrun (env://) if not already initialized."""
-#     from datetime import timedelta
+    # TODO: add more cases
+    is_value_model = (
+        "ForTokenClassification" in self.model_config.architectures[0]
+        or "ForSequenceClassification" in self.model_config.architectures[0]
+    )
 
-#     if dist.is_available() and not dist.is_initialized():
-#         backend = "nccl" if torch.cuda.is_available() else "gloo"
-#         dist.init_process_group(
-#             backend=backend,
-#             init_method="env://",
-#             timeout=timedelta(seconds=timeout_second) if timeout_second is not None else None,
-#         )
+    self.is_value_model = is_value_model
 
+    if self.engine_config.forward_only:
+        wrap_with_ddp = False
+    else:
+        wrap_with_ddp = True
 
-# class TrainingWorker:
-#     """
-#     A torchrun-only variant of verl TrainingWorker:
-#     - No Ray
-#     - No Worker / single_controller
-#     - No DistProfilerExtension
-#     - No @register / dispatch metadata
+    wrap_config = McoreModuleWrapperConfig(
+        is_value_model=is_value_model,  # actor is not value model
+        share_embeddings_and_output_weights=self.model_config.share_embeddings_and_output_weights,
+        wrap_with_ddp=wrap_with_ddp,
+        use_distributed_optimizer=self.engine_config.use_distributed_optimizer,
+    )
+    module, updated_tf_config = make_megatron_module(
+        wrap_config=wrap_config,
+        tf_config=self.tf_config,
+        hf_config=self.model_config.hf_config,
+        bridge=self.bridge,
+        provider=self.provider,
+        override_model_config=self.engine_config.override_mcore_model_config,
+        override_ddp_config=self.engine_config.override_ddp_config,
+        peft_cls=self.peft_cls,
+        peft_config=self.model_config.get("lora", None),
+    )
+    self.tf_config = updated_tf_config
+    print(f"module: {len(module)}")
 
-#     It directly wraps verl Engine and provides the same coarse-grained APIs.
-#     """
+    # if self.engine_config.use_dist_checkpointing:
+    #     load_mcore_dist_weights(module, self.engine_config.dist_checkpointing_path, is_value_model=is_value_model)
+    # else:
+    #     if self.vanilla_bridge:
+    #         self.bridge.load_weights(module, self.model_config.local_path)
+    #     else:
+    #         allowed_mismatched_params = []
+    #         if self.is_value_model:
+    #             allowed_mismatched_params = ["output_layer.weight"]
+    #         self.bridge.load_hf_weights(
+    #             module, self.model_config.local_path, allowed_mismatched_params=allowed_mismatched_params
+    #         )
 
-#     def __init__(self, config):
-#         """
-#         Args:
-#             config: TrainingWorkerConfig
-#         """
-#         from verl.workers.engine import BaseEngine, EngineRegistry
+    if torch.distributed.get_rank() == 0:
+        print_model_size(module[0])
 
-#         _init_dist_if_needed(timeout_second=None)
+    return module
 
-#         self.rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-#         self.world_size = dist.get_world_size() if dist.is_available() and dist.is_initialized() else 1
-#         self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-
-#         self.config = config
-#         self.model_config = self.config.model_config
-#         self.engine_config = self.config.engine_config
-#         self.optimizer_config = self.config.optimizer_config
-#         self.checkpoint_config = self.config.checkpoint_config
-#         self.device_name = get_device_name()
-
-#         # use the one defined in model
-#         self.engine_config.use_remove_padding = self.model_config.use_remove_padding
-
-#         self.engine: BaseEngine = EngineRegistry.new(
-#             model_type=self.config.model_type,
-#             backend=self.engine_config.strategy,
-#             model_config=self.model_config,
-#             engine_config=self.engine_config,
-#             optimizer_config=self.optimizer_config,
-#             checkpoint_config=self.checkpoint_config,
-#         )
-
-#         self.flops_counter = FlopsCounter(self.model_config.hf_config)
-#         self.loss_fn = None
-
-#     # ---------------- basic controls ----------------
-
-#     def to(self, device, model=True, optimizer=True, grad=True):
-#         """Manual control of load/offload"""
-#         assert device in ["cpu", "device"]
-#         if device == "device":
-#             device = get_device_name()
-#         self.engine.to(device=device, model=model, optimizer=optimizer, grad=grad)
-
-#     def set_loss_fn(self, loss_fn):
-#         self.loss_fn = loss_fn
-
-#     def reset(self):
-#         """Reset the model engine to the initial state."""
-#         self.engine.initialize()
-
-#     # ---------------- helpers ----------------
-
-#     def _postprocess_output(self, output, *, global_token_num, delta_time, forward_only):
-#         metrics: dict = output.pop("metrics")
-
-#         # reduce loss in DP group
-#         loss = torch.sum(torch.tensor(output.pop("loss"), device=self.device_name))
-#         dist.all_reduce(loss, op=dist.ReduceOp.AVG, group=self.engine.get_data_parallel_group())
-#         loss = loss.item()
-
-#         grad_norm = metrics.pop("grad_norm", None)
-#         lr = metrics.pop("lr", None)
-
-#         # other metrics allgather in DP group
-#         final_metrics = allgather_dict_into_dict(data=metrics, group=self.engine.get_data_parallel_group())
-#         final_metrics["loss"] = loss
-#         if grad_norm is not None:
-#             final_metrics["grad_norm"] = grad_norm
-#         if lr is not None:
-#             final_metrics["lr"] = lr
-
-#         # MFU
-#         if global_token_num is not None:
-#             estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_token_num, delta_time)
-#             final_metrics["mfu"] = estimated_flops / promised_flops / dist.get_world_size()
-#             if forward_only:
-#                 final_metrics["mfu"] /= 3.0
-
-#         model_output = output.pop("model_output", {})
-#         return tu.get_tensordict(tensor_dict=model_output, non_tensor_dict={"metrics": final_metrics})
-
-#     # ---------------- training / inference ----------------
-
-#     def train_mini_batch(self, data: TensorDict) -> Optional[TensorDict]:
-#         """Split a batch into N mini-batches run for multiple epochs."""
-#         batch_size_per_dp = data.shape[0]
-#         disable_auto_offload = tu.pop(data, key="disable_auto_offload", default=False)
-#         mini_batch_size = tu.pop(data, key="mini_batch_size", default=None)
-#         num_mini_batch = tu.pop(data, key="num_mini_batch", default=None)
-#         epochs = tu.pop(data, key="epochs", default=1)
-#         seed = tu.pop(data, key="seed", default=42)
-#         dataloader_kwargs = tu.pop(data, key="dataloader_kwargs", default={})
-
-#         assert mini_batch_size is not None or num_mini_batch is not None
-
-#         if mini_batch_size is None:
-#             assert batch_size_per_dp % num_mini_batch == 0, f"Got {batch_size_per_dp=} and {num_mini_batch=}"
-#             mini_batch_size_per_gpu = batch_size_per_dp // num_mini_batch
-#         else:
-#             assert mini_batch_size % self.engine.get_data_parallel_size() == 0, (
-#                 f"Got {mini_batch_size=} and {self.engine.get_data_parallel_size()=}"
-#             )
-#             mini_batch_size_per_gpu = mini_batch_size // self.engine.get_data_parallel_size()
-
-#         dataloader = tu.make_iterator(
-#             data,
-#             mini_batch_size=mini_batch_size_per_gpu,
-#             epochs=epochs,
-#             seed=seed + self.engine.get_data_parallel_rank(),
-#             dataloader_kwargs=dataloader_kwargs,
-#         )
-
-#         with (
-#             self.engine.train_mode(disable_auto_offload=disable_auto_offload),
-#             Timer(name="train_batch", logger=None),
-#         ):
-#             output_lst = []
-#             total_num_iterations = data.shape[0] // mini_batch_size_per_gpu * epochs
-
-#             for batch_idx, mini_batch_td in enumerate(dataloader):
-#                 global_token_num = mini_batch_td["input_ids"].offsets().diff().tolist()
-
-#                 # allgather token nums from DP ranks
-#                 global_token_num_output = [None] * self.engine.get_data_parallel_size()
-#                 dist.all_gather_object(global_token_num_output, global_token_num, self.engine.get_data_parallel_group())
-#                 global_token_num = [x for xs in global_token_num_output for x in xs]
-
-#                 tu.assign_non_tensor(
-#                     mini_batch_td,
-#                     global_token_num=NonTensorData(global_token_num),
-#                     update_lr_scheduler=batch_idx == total_num_iterations - 1,
-#                     disable_auto_offload=True,
-#                 )
-#                 out = self.train_batch(mini_batch_td)
-#                 output_lst.append(out)
-
-#             if self.engine.is_mp_src_rank_with_outputs():
-#                 metrics_list = [tu.get(o, "metrics") for o in output_lst]
-#                 metrics = {}
-#                 for m in metrics_list:
-#                     for key, val in m.items():
-#                         if isinstance(val, list):
-#                             m[key] = list(chain.from_iterable(val))
-#                     append_to_dict(metrics, m)
-
-#                 output = tu.get_tensordict(tensor_dict={}, non_tensor_dict={"metrics": metrics}).cpu()
-#             else:
-#                 output = None
-
-#         return output
-
-#     def train_batch(self, data: TensorDict) -> Optional[TensorDict]:
-#         assert self.loss_fn is not None, "loss function can't be None when calling train_batch"
-#         assert not self.engine_config.forward_only, "Can't run `train_batch` when forward_only is in the engine config."
-
-#         global_token_num = tu.get(data, key="global_token_num")
-#         disable_auto_offload = tu.get(data, key="disable_auto_offload", default=False)
-
-#         default_keys = dict(
-#             use_remove_padding=self.model_config.use_remove_padding,
-#             use_dynamic_bsz=self.engine_config.use_dynamic_bsz,
-#             max_token_len_per_gpu=self.engine_config.max_token_len_per_gpu,
-#             micro_batch_size_per_gpu=self.engine_config.micro_batch_size_per_gpu,
-#             use_fused_kernels=self.engine_config.use_fused_kernels,
-#         )
-#         for key, val in default_keys.items():
-#             if key not in data.keys():
-#                 tu.assign_non_tensor(data, **{key: val})
-
-#         with (
-#             self.engine.train_mode(disable_auto_offload=disable_auto_offload),
-#             Timer(name="train_batch", logger=None) as timer,
-#         ):
-#             output = self.engine.train_batch(data, loss_function=self.loss_fn)
-
-#         delta_time = timer.last
-
-#         update_lr_scheduler = tu.get(data, key="update_lr_scheduler", default=False)
-#         lr = self.engine.lr_scheduler_step() if update_lr_scheduler else None
-
-#         if self.engine.is_mp_src_rank_with_outputs():
-#             output.pop("model_output", None)
-#             if lr is not None:
-#                 output["metrics"]["lr"] = lr
-#             final_output = self._postprocess_output(
-#                 output, global_token_num=global_token_num, delta_time=delta_time, forward_only=False
-#             ).cpu()
-#         else:
-#             final_output = None
-
-#         return final_output
-
-#     def infer_batch(self, data: TensorDict) -> Optional[TensorDict]:
-#         global_token_num = tu.get(data, key="global_token_num")
-#         compute_loss = tu.get(data, key="compute_loss", default=True)
-#         disable_auto_offload = tu.get(data, key="disable_auto_offload", default=False)
-
-#         default_keys = dict(
-#             use_remove_padding=self.model_config.use_remove_padding,
-#             use_dynamic_bsz=self.engine_config.use_dynamic_bsz,
-#             max_token_len_per_gpu=self.engine_config.infer_max_token_len_per_gpu,
-#             micro_batch_size_per_gpu=self.engine_config.infer_micro_batch_size_per_gpu,
-#             use_fused_kernels=self.engine_config.use_fused_kernels,
-#         )
-#         for key, val in default_keys.items():
-#             if key not in data.keys():
-#                 tu.assign_non_tensor(data, **{key: val})
-
-#         loss_function = self.loss_fn if compute_loss else None
-
-#         with (
-#             self.engine.eval_mode(disable_auto_offload=disable_auto_offload),
-#             Timer(name="eval_batch", logger=None) as timer,
-#         ):
-#             output = self.engine.infer_batch(data, loss_function=loss_function)
-
-#         delta_time = timer.last
-
-#         if self.engine.is_mp_src_rank_with_outputs():
-#             final_output = self._postprocess_output(
-#                 output, global_token_num=global_token_num, delta_time=delta_time, forward_only=True
-#             ).cpu()
-#         else:
-#             final_output = None
-
-#         return final_output
-
-#     # ---------------- checkpoint ----------------
-
-#     def save_checkpoint(self, local_path, hdfs_path=None, global_step=0, max_ckpt_to_keep=None):
-#         return self.engine.save_checkpoint(local_path, hdfs_path, global_step, max_ckpt_to_keep)
-
-#     def load_checkpoint(self, local_path, hdfs_path=None, del_local_after_load=False):
-#         return self.engine.load_checkpoint(local_path, hdfs_path, del_local_after_load)
+from verl.workers.engine.megatron.transformer_impl import MegatronEngine
+MegatronEngine._build_megatron_module = _build_megatron_module
 
 class ActorSimpleRuntimeWorker:
     """
@@ -296,7 +97,6 @@ class ActorSimpleRuntimeWorker:
 
     # @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def init_model(self):
-        print(self.config)
         model_config: HFModelConfig = omega_conf_to_dataclass(self.config.model)
 
         # 2. build actor model

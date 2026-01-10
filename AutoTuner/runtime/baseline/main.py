@@ -1,5 +1,6 @@
 from .runtime_worker import ActorSimpleRuntimeWorker
 import hydra
+from AutoTuner.utils.distributed import destroy_distributed
 
 def run(config):
     actor = ActorSimpleRuntimeWorker(config.actor_rollout_ref)
@@ -9,6 +10,7 @@ def run(config):
 def main(config):
     # print(config)
     run(config)
+    destroy_distributed()
 
     
     

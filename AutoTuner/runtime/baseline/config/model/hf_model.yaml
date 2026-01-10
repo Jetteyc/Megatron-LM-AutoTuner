@@ -7,13 +7,13 @@
 _target_: verl.workers.config.HFModelConfig
 
 # path to the huggingface model
-path: ~/models/deepseek-llm-7b-chat
+path: /data/common/models/Qwen/Qwen2.5-0.5B
 
 # config to the huggingface config. In case it is not the same as path
-hf_config_path: null
+hf_config_path: /data/common/models/Qwen/Qwen2.5-0.5B
 
 # path to the huggingface tokenizer. In case it is not the same as path
-tokenizer_path: null
+tokenizer_path: /data/common/models/Qwen/Qwen2.5-0.5B
 
 # whether to use shared memory for model loading
 use_shm: False

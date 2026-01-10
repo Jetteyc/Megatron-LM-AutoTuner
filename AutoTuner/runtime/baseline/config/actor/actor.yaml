@@ -21,7 +21,7 @@ ppo_mini_batch_size: 256
 ppo_micro_batch_size: null
 
 # Local per-GPU micro batch size
-ppo_micro_batch_size_per_gpu: null
+ppo_micro_batch_size_per_gpu: 32
 
 # Whether to automatically adjust batch size at runtime
 # oc.select: the default val for ref.log_prob_use_dynamic_bsz

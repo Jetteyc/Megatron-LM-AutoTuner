@@ -1,0 +1,6 @@
+# control the way to read data or construct random data  
+randomize: true
+
+test_cases_dir: "AutoTuner/testbench/profile/cases/"
+
+test_cases_file: "local/qwen3_0_6b.json"

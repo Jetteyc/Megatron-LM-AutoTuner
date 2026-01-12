@@ -10,10 +10,10 @@ _target_: verl.workers.config.HFModelConfig
 path: /data/common/models/Qwen/Qwen2.5-0.5B
 
 # config to the huggingface config. In case it is not the same as path
-hf_config_path: /data/common/models/Qwen/Qwen2.5-0.5B
+hf_config_path: null
 
 # path to the huggingface tokenizer. In case it is not the same as path
-tokenizer_path: /data/common/models/Qwen/Qwen2.5-0.5B
+tokenizer_path: null
 
 # whether to use shared memory for model loading
 use_shm: False

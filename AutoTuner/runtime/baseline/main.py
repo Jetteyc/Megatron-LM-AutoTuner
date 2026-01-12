@@ -52,7 +52,7 @@ def run(config):
     actor.init_model()
     test_cases = create_test_cases(config, seqlen=1024)
     train_dataset = DataSets(
-        AutoConfig.from_pretrained(config.actor_rollout_ref.model.hf_config_path),
+        AutoConfig.from_pretrained(config.actor_rollout_ref.model.hf_config_path if config.actor_rollout_ref.model.hf_config_path else config.actor_rollout_ref.model.path),
         test_cases,
         fix_compute_amount=config.fix_compute_amount,
         use_dynamic_bsz_balance=True,

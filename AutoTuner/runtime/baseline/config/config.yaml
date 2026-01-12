@@ -8,6 +8,7 @@ defaults:
   - data@data: legacy_data
   - _self_
 
+fix_compute_amount: False
 
 # config for the algorithm
 algorithm:

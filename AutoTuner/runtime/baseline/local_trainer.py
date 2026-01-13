@@ -3,21 +3,45 @@ from verl import DataProto
 from verl.workers.utils.padding import left_right_2_no_padding
 from verl.utils import tensordict_utils as tu
 from verl.utils.py_functional import rename_dict
+from verl.trainer.ppo.ray_trainer import compute_response_mask, reduce_metrics, RayPPOTrainer
 from tqdm import tqdm
 import uuid
 import numpy as np
 import torch
 from pprint import pprint
+from verl.utils.debug import marked_timer
+from verl.utils.seqlen_balancing import calculate_workload, get_seqlen_balanced_partitions, log_seqlen_unbalance
+from verl.trainer.ppo.metric_utils import (
+    compute_data_metrics,
+    compute_throughout_metrics,
+    compute_timing_metrics,
+)
 
 class LocalTrainer:
-    def __init__(self):
-        pass
+    def __init__(self, config, actor, train_dataloader):
+        """
+        Docstring for __init__
+        
+        :param self: this class itself, all the functions related to working group should be set to local
+        :param config: just pass the config from main() is enough
+        :param actor: pass the constructed actor from outside
+        :param train_dataloader: pass the constructed train_dataloader from outside
+        
+        You may add more params in the future, but please add it carefully and cautiously!
+        """
+        self.async_rollout_mode = True
+        
+        # pass some params to the fields of the obj
+        self.actor = actor
+        self.config = config
+        self.train_dataloader = train_dataloader
+        
+        # patch some functions as tool functions if we do not need to change it
+        self._get_gen_batch = RayPPOTrainer._get_gen_batch
     
     def _update_actor(self, batch: DataProto) -> DataProto:
         rollout_config = self.config.actor_rollout_ref.rollout
         batch.meta_info["multi_turn"] = rollout_config.multi_turn.enable
-        # TODO: Make "temperature" single source of truth from generation.
-        # ignore this todo, it's from source code
         batch.meta_info["temperature"] = rollout_config.temperature
         # update actor
         batch_td = batch.to_tensordict()
@@ -39,7 +63,6 @@ class LocalTrainer:
             dataloader_kwargs={"shuffle": shuffle},
         )
 
-        # TODO: in future initialization, set actor to our actor
         actor_output = self.actor.update_actor(batch_td)
         
         actor_output = tu.get(actor_output, "metrics")
@@ -48,6 +71,46 @@ class LocalTrainer:
         actor_output["perf/mfu/actor"] = actor_output.pop("actor/mfu")
         actor_output = DataProto.from_single_dict(data={}, meta_info={"metrics": actor_output})
         return actor_output
+
+    def _balance_batch(self, batch: DataProto, metrics, logging_prefix="global_seqlen", keep_minibatch=False):
+        """Reorder the data on single controller such that each dp rank gets similar total tokens"""
+        attention_mask = batch.batch["attention_mask"]
+        batch_size = attention_mask.shape[0]
+        global_seqlen_lst = batch.batch["attention_mask"].view(batch_size, -1).sum(-1)  # (train_batch_size,)
+        workload_lst = calculate_workload(global_seqlen_lst)
+        # Get dp_size from dispatch info to correctly balance across data parallel ranks
+        # Note: world_size may include tensor/pipeline parallel dimensions, but we only want DP
+        
+        # TODO: we may have to check and FIX this function
+        # since we don't use working group, we have to find a way to fix it locally
+        dp_size = self._get_dp_size(self.actor_rollout_wg, "actor")
+        if keep_minibatch:
+            # Decouple the DP balancing and mini-batching.
+            minibatch_size = self.config.actor_rollout_ref.actor.get("ppo_mini_batch_size")
+            minibatch_num = len(workload_lst) // minibatch_size
+            global_partition_lst = [[] for _ in range(dp_size)]
+            for i in range(minibatch_num):
+                rearrange_minibatch_lst = get_seqlen_balanced_partitions(
+                    workload_lst[i * minibatch_size : (i + 1) * minibatch_size],
+                    k_partitions=dp_size,
+                    equal_size=True,
+                )
+                for j, part in enumerate(rearrange_minibatch_lst):
+                    global_partition_lst[j].extend([x + minibatch_size * i for x in part])
+        else:
+            global_partition_lst = get_seqlen_balanced_partitions(workload_lst, k_partitions=dp_size, equal_size=True)
+        # Place smaller micro-batches at both ends to reduce the bubbles in pipeline parallel.
+        for idx, partition in enumerate(global_partition_lst):
+            partition.sort(key=lambda x: (workload_lst[x], x))
+            ordered_partition = partition[::2] + partition[1::2][::-1]
+            global_partition_lst[idx] = ordered_partition
+        # reorder based on index. The data will be automatically equally partitioned by dispatch function
+        global_idx = torch.tensor([j for partition in global_partition_lst for j in partition])
+        batch.reorder(global_idx)
+        global_balance_stats = log_seqlen_unbalance(
+            seqlen_list=global_seqlen_lst, partitions=global_partition_lst, prefix=logging_prefix
+        )
+        metrics.update(global_balance_stats)
     
     def fit(self):
         """
@@ -60,7 +123,6 @@ class LocalTrainer:
 
         from verl.utils.tracking import Tracking
 
-        # TODO: add self.config
         logger = Tracking(
             project_name=self.config.trainer.project_name,
             experiment_name=self.config.trainer.experiment_name,
@@ -73,7 +135,6 @@ class LocalTrainer:
         # load checkpoint before doing anything
         # self._load_checkpoint()
 
-        # TODO: add self.train_dataloader
         current_epoch = self.global_steps // len(self.train_dataloader)
 
         # perform validation before training
@@ -98,13 +159,13 @@ class LocalTrainer:
         last_val_metrics = None
         self.max_steps_duration = 0
 
-        prev_step_profile = False
-        curr_step_profile = (
-            self.global_steps in self.config.global_profiler.steps
-            if self.config.global_profiler.steps is not None
-            else False
-        )
-        next_step_profile = False
+        # prev_step_profile = False
+        # curr_step_profile = (
+        #     self.global_steps in self.config.global_profiler.steps
+        #     if self.config.global_profiler.steps is not None
+        #     else False
+        # )
+        # next_step_profile = False
 
         for epoch in range(current_epoch, self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
@@ -113,13 +174,12 @@ class LocalTrainer:
                 metrics = {}
                 timing_raw = {}
 
-                # TODO: we will come back at second turn
-                with marked_timer("start_profile", timing_raw):
-                    self._start_profiling(
-                        not prev_step_profile and curr_step_profile
-                        if self.config.global_profiler.profile_continuous_steps
-                        else curr_step_profile
-                    )
+                # with marked_timer("start_profile", timing_raw):
+                #     self._start_profiling(
+                #         not prev_step_profile and curr_step_profile
+                #         if self.config.global_profiler.profile_continuous_steps
+                #         else curr_step_profile
+                #     )
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
                 batch.meta_info["temperature"] = self.config.actor_rollout_ref.rollout.temperature
 
@@ -128,7 +188,6 @@ class LocalTrainer:
                     [str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object
                 )
 
-                # TODO: might need to move here, or just to implement the function
                 gen_batch = self._get_gen_batch(batch)
 
                 # pass global_steps to trace
@@ -139,18 +198,16 @@ class LocalTrainer:
 
                 is_last_step = self.global_steps >= self.total_training_steps
                 
-                # TODO: we will come back later to see if the timer should be kept
                 with marked_timer("step", timing_raw):
                     # generate a batch
-                    with marked_timer("gen", timing_raw, color="red"):
-                        # TODO: we'll come back later to check
-                        # if not self.async_rollout_mode:
-                        #     gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch_output)
-                        # else:
-                        #     gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch_output)
+                    # with marked_timer("gen", timing_raw, color="red"):
+                    #     if not self.async_rollout_mode:
+                    #         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch_output)
+                    #     else:
+                    #         gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch_output)
 
-                        timing_raw.update(gen_batch_output.meta_info["timing"])
-                        gen_batch_output.meta_info.pop("timing", None)
+                    #     timing_raw.update(gen_batch_output.meta_info["timing"])
+                    #     gen_batch_output.meta_info.pop("timing", None)
 
                     # if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                     #     if self.reward_fn is None:
@@ -189,7 +246,6 @@ class LocalTrainer:
                     #         del rm_scores, gen_baseline_batch, gen_baseline_output
                     # repeat to align with repeated responses in rollout
                     
-                    # TODO: we'll come back later to check here and fix the dependency
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
 
@@ -199,6 +255,9 @@ class LocalTrainer:
                     # NOTE: This usually changes the order of data in the `batch`,
                     # which won't affect the advantage calculation (since it's based on uid),
                     # but might affect the loss calculation (due to the change of mini-batching).
+                    
+                    # TODO: we should take a look at this, it might be useful, so I carry the function
+                    # but this function has something to fix, ctrl and click the func name to see
                     if self.config.trainer.balance_batch:
                         self._balance_batch(batch, metrics=metrics)
 
@@ -259,7 +318,6 @@ class LocalTrainer:
                     #         old_log_prob.batch.pop("entropys")
                     #         batch = batch.union(old_log_prob)
                     #         if "rollout_log_probs" in batch.batch.keys():
-                    #             # TODO: we may want to add diff of probs too.
                     #             from verl.utils.debug.metrics import calculate_debug_metrics
 
                     #             metrics.update(calculate_debug_metrics(batch))
@@ -339,15 +397,13 @@ class LocalTrainer:
                         # update actor
                     with marked_timer("update_actor", timing_raw, color="red"):
                         actor_output = self._update_actor(batch)
-                    # TODO: we'll come back and check this place
                     actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                     metrics.update(actor_output_metrics)
 
                     # Log rollout generations if enabled
-                    # TODO: come back to check
-                    rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
-                    if rollout_data_dir:
-                        self._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
+                    # rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
+                    # if rollout_data_dir:
+                    #     self._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
 
                 # validate
                 # if (
@@ -381,20 +437,19 @@ class LocalTrainer:
                 #     with marked_timer("save_checkpoint", timing_raw, color="green"):
                 #         self._save_checkpoint()
 
-                # TODO: we'll come back to check if profile is important
-                with marked_timer("stop_profile", timing_raw):
-                    next_step_profile = (
-                        self.global_steps + 1 in self.config.global_profiler.steps
-                        if self.config.global_profiler.steps is not None
-                        else False
-                    )
-                    self._stop_profiling(
-                        curr_step_profile and not next_step_profile
-                        if self.config.global_profiler.profile_continuous_steps
-                        else curr_step_profile
-                    )
-                    prev_step_profile = curr_step_profile
-                    curr_step_profile = next_step_profile
+                # with marked_timer("stop_profile", timing_raw):
+                #     next_step_profile = (
+                #         self.global_steps + 1 in self.config.global_profiler.steps
+                #         if self.config.global_profiler.steps is not None
+                #         else False
+                #     )
+                #     self._stop_profiling(
+                #         curr_step_profile and not next_step_profile
+                #         if self.config.global_profiler.profile_continuous_steps
+                #         else curr_step_profile
+                #     )
+                #     prev_step_profile = curr_step_profile
+                #     curr_step_profile = next_step_profile
 
                 steps_duration = timing_raw["step"]
                 self.max_steps_duration = max(self.max_steps_duration, steps_duration)
@@ -407,9 +462,12 @@ class LocalTrainer:
                     }
                 )
                 # collect metrics
+                # TODO: we may have to check and fully make use of this, so I did not remove this
+                # but, for compute_data_metrics, we may have to check it for there might be some problems
                 metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
                 metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
-                # TODO: implement actual tflpo and theoretical tflpo
+                
+                # real TODO: fix this "get_n_gpus"
                 n_gpus = self.resource_pool_manager.get_n_gpus()
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
                 # Note: mismatch metrics (KL, PPL, etc.) are collected at line 1179 after advantage computation
@@ -418,21 +476,18 @@ class LocalTrainer:
                 # if isinstance(self.train_dataloader.sampler, AbstractCurriculumSampler):
                 #     self.train_dataloader.sampler.update(batch=batch)
 
-                # TODO: make a canonical logger that supports various backend
-                # this todo is from the source code
                 logger.log(data=metrics, step=self.global_steps)
 
                 progress_bar.update(1)
                 self.global_steps += 1
 
-                # TODO: we'll come back to see
-                if (
-                    hasattr(self.config.actor_rollout_ref.actor, "profiler")
-                    and self.config.actor_rollout_ref.actor.profiler.tool == "torch_memory"
-                ):
-                    self.actor_rollout_wg.dump_memory_snapshot(
-                        tag=f"post_update_step{self.global_steps}", sub_dir=f"step{self.global_steps}"
-                    )
+                # if (
+                #     hasattr(self.config.actor_rollout_ref.actor, "profiler")
+                #     and self.config.actor_rollout_ref.actor.profiler.tool == "torch_memory"
+                # ):
+                #     self.actor_rollout_wg.dump_memory_snapshot(
+                #         tag=f"post_update_step{self.global_steps}", sub_dir=f"step{self.global_steps}"
+                #     )
 
                 if is_last_step:
                     # if hasattr(self.actor_rollout_wg, "async_calls_finalize_fn_exec"):
@@ -440,6 +495,7 @@ class LocalTrainer:
                     pprint(f"Final validation metrics: {last_val_metrics}")
                     progress_bar.close()
                     return
+                
 
                 # this is experimental and may be changed/removed in the future
                 # in favor of a general-purpose data buffer pool

@@ -8,6 +8,8 @@ from verl.workers.utils.losses import ppo_loss
 from verl.single_controller.base import Worker
 from verl.single_controller.base.decorator import Dispatch, make_nd_compute_dataproto_dispatch_fn, register
 import torch
+from verl.utils.profiler import DistProfiler, DistProfilerExtension
+
 
 def _build_megatron_module(self):
     from verl.utils.megatron_utils import (
@@ -85,6 +87,27 @@ class ActorSimpleRuntimeWorker:
         # self._is_actor = self.role in ["actor", "actor_rollout", "actor_rollout_ref"]
         # self._is_rollout = self.role in ["rollout", "actor_rollout", "actor_rollout_ref"]
         # self._is_ref = self.role in ["ref", "actor_rollout_ref"]
+        # for future support, we may have to add the profiler back, but now, we don't need it
+        # if self._is_actor:
+        #     omega_profiler_config = config.actor.get("profiler", {})
+        # elif self._is_rollout:
+        #     # NOTE: In colocation mode, rollout config may not take effect (follow the actor config)
+        #     # This is for extendability in AsyncRL cases
+        #     omega_profiler_config = config.rollout.get("profiler", {})
+        # else:
+        #     omega_profiler_config = config.ref.get("profiler", {})
+
+        # profiler_config = omega_conf_to_dataclass(omega_profiler_config, dataclass_type=ProfilerConfig)
+        # if omega_profiler_config.get("tool", None) in ["npu", "nsys", "torch", "torch_memory"]:
+        #     tool_config = omega_conf_to_dataclass(
+        #         omega_profiler_config.get("tool_config", {}).get(omega_profiler_config.get("tool"))
+        #     )
+        # else:
+        #     tool_config = None
+
+        # DistProfilerExtension.__init__(
+        #     self, DistProfiler(rank=self.rank, config=profiler_config, tool_config=tool_config)
+        # )
 
     # @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def set_loss_fn(self, loss_fn):

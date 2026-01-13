@@ -141,6 +141,8 @@ def run(config):
     #     vpp_size=mpu.get_virtual_pipeline_model_parallel_world_size(),
     # )
     print("---------------------created train dataset---------------------")
+    train_sampler = create_rl_sampler(config.data, train_dataset)
+    print("---------------------created data sampler---------------------")
     # from verl.utils.fs import copy_to_local
     # local_path = copy_to_local(
     #     config.actor_rollout_ref.model.path, use_shm=config.actor_rollout_ref.model.get("use_shm", False)
@@ -153,16 +155,16 @@ def run(config):
     # tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
     # # Used for multimodal LLM, could be None
     # processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
-    # from verl.utils.dataset.rl_dataset import collate_fn
+    from verl.utils.dataset.rl_dataset import collate_fn
     # train_sampler = create_rl_sampler(config.data, train_dataset)
-    # train_dataloader = create_train_dataloader(
-    #     config, 
-    #     train_dataset, 
-    #     tokenizer, 
-    #     processor, 
-    #     collate_fn, 
-    #     train_sampler
-    # )
+    train_dataloader = create_train_dataloader(
+        config, 
+        train_dataset, 
+        tokenizer, 
+        processor, 
+        collate_fn, 
+        train_sampler
+    )
     # train_dataset = DataSetsGeneratorDataset(
     #     datasets=dataset,
     #     test_cases=test_cases,
@@ -173,9 +175,8 @@ def run(config):
     #     num_workers=0,
     #     drop_last=True,
     # )
-    train_sampler = create_rl_sampler(config.data, train_dataset)
-    print("---------------------created data sampler---------------------")
-    # print("---------------------created train dataloader---------------------")
+    
+    print("---------------------created train dataloader---------------------")
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)

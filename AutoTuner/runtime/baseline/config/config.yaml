@@ -111,4 +111,4 @@ trainer:
 
   # whether to use legacy worker implementation
   #  mode: "auto", "enable", or "disable"
-  use_legacy_worker_impl: auto
+  use_legacy_worker_impl: disable

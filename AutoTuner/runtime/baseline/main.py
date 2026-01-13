@@ -1,5 +1,5 @@
 from .runtime_worker import ActorSimpleRuntimeWorker
-from ..commons import get_batch_data_generator,create_train_dataloader
+from ..commons import get_batch_data_generator,create_train_dataloader, create_rl_dataset
 import hydra
 from AutoTuner.utils.distributed import destroy_distributed
 from tensordict import TensorDict
@@ -15,100 +15,6 @@ from verl.utils.import_utils import load_extern_object
 from verl.experimental.dataset.sampler import AbstractSampler
 from verl.trainer.ppo.ray_trainer import RayPPOTrainer
 
-
-from torch.utils.data import IterableDataset, Dataset
-from typing import Optional
-
-def create_rl_dataset(data_config, tokenizer, processor, data_paths=None, is_train=True, max_samples: int = -1):
-    """Create a dataset.
-
-    Arguments:
-        data_paths: List of paths to data files.
-        data_config: The data config.
-        tokenizer (Tokenizer): The tokenizer.
-        processor (Processor): The processor.
-
-    Returns:
-        dataset (Dataset): The dataset.
-    """
-    if data_paths is None:
-        dummy_size = data_config.get("dummy_dataset_size", 1000)
-        dataset = DummyDataset(size=dummy_size)
-
-    else:
-        from verl.utils.dataset.rl_dataset import get_dataset_class
-
-        # Get the dataset class
-        dataset_cls = get_dataset_class(data_config)
-
-        # Instantiate the dataset using the determined dataset class
-        dataset = dataset_cls(
-            data_files=data_paths,
-            tokenizer=tokenizer,
-            processor=processor,
-            config=data_config,
-            max_samples=max_samples,
-        )
-
-    return dataset
-
-class DummyDataset(Dataset):
-    def __init__(self, size: int = 1000):
-        self.size = size
-    
-    def __len__(self):
-        return self.size
-    
-    def __getitem__(self, idx):
-        return {"dummy_index": idx}
-
-class DataSetsGeneratorDataset(IterableDataset):
-    def __init__(self, datasets: DataSets, test_cases):
-        self.datasets = datasets
-        self.test_cases = test_cases
-
-    def __iter__(self):
-        for test_case in self.test_cases:
-            batch_gen = self.datasets.get_batch_generator(test_case)
-            for batch in batch_gen:
-                yield {
-                    "test_case": test_case,
-                    "batch": batch,
-                }
-
-def create_test_cases(config, seqlen):
-    json_test_cases = {
-        "model": "deepseek-ai/DeepSeek-V3-Base",
-        "cases": [
-            {
-                "batch_size": config.data.train_batch_size,
-                "micro_batch_size": config.actor_rollout_ref.actor.ppo_micro_batch_size,
-                "seqlen": seqlen,
-                "max_token_len": config.actor_rollout_ref.actor.ppo_max_token_len_per_gpu,
-                "shape":  "thd" if config.actor_rollout_ref.actor.megatron.use_remove_padding else "bshd",
-                "system": config.actor_rollout_ref.actor.strategy
-            },
-            {
-                "batch_size": config.data.train_batch_size,
-                "micro_batch_size": config.actor_rollout_ref.actor.ppo_micro_batch_size,
-                "seqlen": seqlen,
-                "max_token_len": config.actor_rollout_ref.actor.ppo_max_token_len_per_gpu,
-                "shape": "thd" if config.actor_rollout_ref.actor.megatron.use_remove_padding else "bshd",
-                "system": config.actor_rollout_ref.actor.strategy
-            }
-        ]
-    }
-    test_cases = []
-    for json_test_case in json_test_cases["cases"]:
-        test_case = InputTestCase(**json_test_case)
-        test_case.tensor_model_parallel_size = config.actor_rollout_ref.actor.megatron.tensor_model_parallel_size
-        test_case.pipeline_model_parallel_size = config.actor_rollout_ref.actor.megatron.pipeline_model_parallel_size
-        test_case.virtual_pipeline_model_parallel_size = config.actor_rollout_ref.actor.megatron.virtual_pipeline_model_parallel_size
-        test_case.context_parallel_size = config.actor_rollout_ref.actor.megatron.context_parallel_size
-        test_case.expert_parallel_size = config.actor_rollout_ref.actor.megatron.expert_model_parallel_size
-        test_case.expert_tensor_parallel_size = config.actor_rollout_ref.actor.megatron.expert_tensor_parallel_size
-        test_cases.append(test_case)
-    return test_cases
 
 def run(config):
     validate_config(config=config, use_reference_policy=False, use_critic=False)

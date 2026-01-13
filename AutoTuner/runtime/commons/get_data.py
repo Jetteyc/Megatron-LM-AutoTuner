@@ -101,44 +101,96 @@ def create_train_dataloader(config, train_dataset, tokenizer, processor, collate
         print(f"Warning: Could not set total_training_steps in config. Structure missing? Error: {e}")
     return train_dataloader
 
-# class BatchDataConstructor(ABC):
-#     @abstractmethod
-#     def gen_inputs(self):
-#         pass
-    
-# class RandomBatchDataConstructor(BatchDataConstructor):
-#     def __init__(self, test_cases, model_args, fix_compute_amount=True):
-#         super().__init__()
-#         self.hf_config = get_hf_model_config(model_args.hf_config_path)
-#         self.fix_compute_amount = fix_compute_amount
-#         self.test_cases = test_cases
-#         self.datasets = None
-    
-#     def gen_inputs(self):
-#         if self.datasets is None:
-#             self.datasets = DataSets(
-#                 self.hf_config,
-#                 self.test_cases,
-#                 fix_compute_amount=self.fix_compute_amount,
-#                 use_dynamic_bsz_balance=True,
-#                 vpp_size=mpu.get_virtual_pipeline_model_parallel_world_size()
-#             )
-            
-        
+from torch.utils.data import IterableDataset, Dataset
+from typing import Optional
 
-# def handle_test_cases(args) -> List[InputTestCase]:
-#     with open(args.real_test_cases_file, "r") as fp:
-#         json_test_cases = json.load(fp)
-#     test_cases = []
-#     for json_test_case in json_test_cases["cases"]:
-#         test_case = InputTestCase(**json_test_case)
-#         test_case.tensor_model_parallel_size = args.tensor_model_parallel_size
-#         test_case.pipeline_model_parallel_size = args.pipeline_model_parallel_size
-#         test_case.virtual_pipeline_model_parallel_size = (
-#             args.virtual_pipeline_model_parallel_size
-#         )
-#         test_case.context_parallel_size = args.context_parallel_size
-#         test_case.expert_parallel_size = args.expert_parallel_size
-#         test_case.expert_tensor_parallel_size = args.expert_tensor_parallel_size
-#         test_cases.append(test_case)
-#     return test_cases
+def create_rl_dataset(data_config, tokenizer, processor, data_paths=None, is_train=True, max_samples: int = -1):
+    """Create a dataset.
+
+    Arguments:
+        data_paths: List of paths to data files.
+        data_config: The data config.
+        tokenizer (Tokenizer): The tokenizer.
+        processor (Processor): The processor.
+
+    Returns:
+        dataset (Dataset): The dataset.
+    """
+    if data_paths is None:
+        dummy_size = data_config.get("dummy_dataset_size", 1000)
+        dataset = DummyDataset(size=dummy_size)
+
+    else:
+        from verl.utils.dataset.rl_dataset import get_dataset_class
+
+        # Get the dataset class
+        dataset_cls = get_dataset_class(data_config)
+
+        # Instantiate the dataset using the determined dataset class
+        dataset = dataset_cls(
+            data_files=data_paths,
+            tokenizer=tokenizer,
+            processor=processor,
+            config=data_config,
+            max_samples=max_samples,
+        )
+
+    return dataset
+
+class DummyDataset(Dataset):
+    def __init__(self, size: int = 1000):
+        self.size = size
+    
+    def __len__(self):
+        return self.size
+    
+    def __getitem__(self, idx):
+        return {"dummy_index": idx}
+
+class DataSetsGeneratorDataset(IterableDataset):
+    def __init__(self, datasets: DataSets, test_cases):
+        self.datasets = datasets
+        self.test_cases = test_cases
+
+    def __iter__(self):
+        for test_case in self.test_cases:
+            batch_gen = self.datasets.get_batch_generator(test_case)
+            for batch in batch_gen:
+                yield {
+                    "test_case": test_case,
+                    "batch": batch,
+                }
+
+def create_test_cases(config, seqlen):
+    json_test_cases = {
+        "model": "deepseek-ai/DeepSeek-V3-Base",
+        "cases": [
+            {
+                "batch_size": config.data.train_batch_size,
+                "micro_batch_size": config.actor_rollout_ref.actor.ppo_micro_batch_size,
+                "seqlen": seqlen,
+                "max_token_len": config.actor_rollout_ref.actor.ppo_max_token_len_per_gpu,
+                "shape":  "thd" if config.actor_rollout_ref.actor.megatron.use_remove_padding else "bshd",
+                "system": config.actor_rollout_ref.actor.strategy
+            },
+            {
+                "batch_size": config.data.train_batch_size,
+                "micro_batch_size": config.actor_rollout_ref.actor.ppo_micro_batch_size,
+                "seqlen": seqlen,
+                "max_token_len": config.actor_rollout_ref.actor.ppo_max_token_len_per_gpu,
+                "shape": "thd" if config.actor_rollout_ref.actor.megatron.use_remove_padding else "bshd",
+                "system": config.actor_rollout_ref.actor.strategy
+            }
+        ]
+    }
+    test_cases = []
+    for json_test_case in json_test_cases["cases"]:
+        test_case = InputTestCase(**json_test_case)
+        test_case.tensor_model_parallel_size = config.actor_rollout_ref.actor.megatron.tensor_model_parallel_size
+        test_case.pipeline_model_parallel_size = config.actor_rollout_ref.actor.megatron.pipeline_model_parallel_size
+        test_case.virtual_pipeline_model_parallel_size = config.actor_rollout_ref.actor.megatron.virtual_pipeline_model_parallel_size
+        test_case.context_parallel_size = config.actor_rollout_ref.actor.megatron.context_parallel_size
+        test_case.expert_parallel_size = config.actor_rollout_ref.actor.megatron.expert_model_parallel_size
+        test_case.expert_tensor_parallel_size = config.actor_rollout_ref.actor.megatron.expert_tensor_parallel_size
+        test_cases.append(test_case)
+    return test_cases

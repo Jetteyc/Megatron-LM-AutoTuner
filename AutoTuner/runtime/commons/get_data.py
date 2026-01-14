@@ -1,13 +1,110 @@
 import os
 import json
 from AutoTuner.utils.structs import InputTestCase
-from AutoTuner.utils.model_inputs import DataSets
+from torch.utils.data import Dataset
+from omegaconf import DictConfig
+import torch
+import numpy as np
+from typing import Optional
+from verl.utils.model import create_random_mask, compute_position_id_with_mask
 
-import megatron.core.parallel_state as mpu
-from AutoTuner.utils.config import (
-    get_hf_model_config,
-)
 
+class RandomDataset(Dataset):
+    def __init__(
+        self,
+        size: int = 10000,
+        tokenizer: Optional[object] = None,
+        config: Optional[DictConfig] = None,
+        processor: Optional[object] = None,
+        max_samples: int = -1,
+    ):
+        self.tokenizer = tokenizer
+        self.processor = processor
+        self.config = config or {}
+        
+        self.max_prompt_length = self.config.get("max_prompt_length", 1024)
+        self.min_prompt_length = self.config.get("min_prompt_length", 100)
+        
+        if tokenizer is not None:
+            self.vocab_size = len(tokenizer) if hasattr(tokenizer, '__len__') else getattr(tokenizer, 'vocab_size', 32000)
+        else:
+            self.vocab_size = self.config.get("vocab_size", 32000)
+        
+        self.seed = self.config.get("dataset_seed", 42)
+        self.max_ratio_of_valid_token = self.config.get("max_ratio_of_valid_token", 0.9)
+        self.min_ratio_of_valid_token = self.config.get("min_ratio_of_valid_token", 0.5)
+        self.max_ratio_of_left_padding = self.config.get("max_ratio_of_left_padding", 0.1)
+        self.need_tools_kwargs = self.config.get("need_tools_kwargs", False)
+        
+        self.size = size
+        if max_samples > 0:
+            self.size = min(size, max_samples)
+        
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
+        
+        self._prompt_lengths = np.random.randint(
+            self.min_prompt_length, 
+            self.max_prompt_length + 1, 
+            size=self.size
+        )
+        
+        print(f"RandomDataset initialized with {self.size} samples")
+        print(f"Prompt length range: [{self.min_prompt_length}, {self.max_prompt_length}]")
+        print(f"Vocab size: {self.vocab_size}")
+    
+    def __len__(self):
+        return self.size
+    
+    def __getitem__(self, idx: int) -> dict:
+        rng = np.random.RandomState(self.seed + idx)
+        
+        prompt_length = int(self._prompt_lengths[idx])
+        
+        input_ids = torch.randint(
+            low=0, 
+            high=self.vocab_size, 
+            size=(prompt_length,),
+            generator=torch.Generator().manual_seed(self.seed + idx)
+        )
+
+        attention_mask = create_random_mask(
+            input_ids=input_ids.unsqueeze(0),
+            max_ratio_of_left_padding=self.max_ratio_of_left_padding,
+            max_ratio_of_valid_token=self.max_ratio_of_valid_token,
+            min_ratio_of_valid_token=self.min_ratio_of_valid_token,
+        ).squeeze(0)
+        
+        position_ids = compute_position_id_with_mask(attention_mask.unsqueeze(0)).squeeze(0)
+        
+        raw_prompt = [
+            {
+                "role": "user",
+                "content": f"Random prompt with {prompt_length} tokens (idx={idx})"
+            }
+        ]
+        
+        dummy_tensor = torch.tensor([0], dtype=torch.uint8)
+        
+        return {
+            "raw_prompt": raw_prompt,
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+            "dummy_tensor": dummy_tensor,
+            "index": idx,
+            "tools_kwargs": {},
+            "interaction_kwargs": {},
+            "data_source": "random_dataset",
+            "extra_info": {
+                "index": idx,
+                "prompt_length": prompt_length,
+                "tools_kwargs": {},
+                "interaction_kwargs": {},
+                "need_tools_kwargs": self.need_tools_kwargs,
+            }
+        }
+    
 def get_random_data(path, engine_args, model_args):
     with open(path, "r") as fp:
         json_test_cases = json.load(fp)        
@@ -117,8 +214,14 @@ def create_rl_dataset(data_config, tokenizer, processor, data_paths=None, is_tra
         dataset (Dataset): The dataset.
     """
     if data_paths is None:
-        dummy_size = data_config.get("dummy_dataset_size", 1000)
-        dataset = DummyDataset(size=dummy_size)
+        dummy_size = data_config.get("dummy_dataset_size", 10000)
+        dataset = RandomDataset(
+            size=dummy_size,
+            tokenizer=tokenizer,
+            processor=processor,
+            config=data_config,
+            max_samples=max_samples,
+        )
 
     else:
         from verl.utils.dataset.rl_dataset import get_dataset_class
@@ -136,61 +239,3 @@ def create_rl_dataset(data_config, tokenizer, processor, data_paths=None, is_tra
         )
 
     return dataset
-
-class DummyDataset(Dataset):
-    def __init__(self, size: int = 1000):
-        self.size = size
-    
-    def __len__(self):
-        return self.size
-    
-    def __getitem__(self, idx):
-        return {"dummy_index": idx}
-
-class DataSetsGeneratorDataset(IterableDataset):
-    def __init__(self, datasets: DataSets, test_cases):
-        self.datasets = datasets
-        self.test_cases = test_cases
-
-    def __iter__(self):
-        for test_case in self.test_cases:
-            batch_gen = self.datasets.get_batch_generator(test_case)
-            for batch in batch_gen:
-                yield {
-                    "test_case": test_case,
-                    "batch": batch,
-                }
-
-def create_test_cases(config, seqlen):
-    json_test_cases = {
-        "model": "deepseek-ai/DeepSeek-V3-Base",
-        "cases": [
-            {
-                "batch_size": config.data.train_batch_size,
-                "micro_batch_size": config.actor_rollout_ref.actor.ppo_micro_batch_size,
-                "seqlen": seqlen,
-                "max_token_len": config.actor_rollout_ref.actor.ppo_max_token_len_per_gpu,
-                "shape":  "thd" if config.actor_rollout_ref.actor.megatron.use_remove_padding else "bshd",
-                "system": config.actor_rollout_ref.actor.strategy
-            },
-            {
-                "batch_size": config.data.train_batch_size,
-                "micro_batch_size": config.actor_rollout_ref.actor.ppo_micro_batch_size,
-                "seqlen": seqlen,
-                "max_token_len": config.actor_rollout_ref.actor.ppo_max_token_len_per_gpu,
-                "shape": "thd" if config.actor_rollout_ref.actor.megatron.use_remove_padding else "bshd",
-                "system": config.actor_rollout_ref.actor.strategy
-            }
-        ]
-    }
-    test_cases = []
-    for json_test_case in json_test_cases["cases"]:
-        test_case = InputTestCase(**json_test_case)
-        test_case.tensor_model_parallel_size = config.actor_rollout_ref.actor.megatron.tensor_model_parallel_size
-        test_case.pipeline_model_parallel_size = config.actor_rollout_ref.actor.megatron.pipeline_model_parallel_size
-        test_case.virtual_pipeline_model_parallel_size = config.actor_rollout_ref.actor.megatron.virtual_pipeline_model_parallel_size
-        test_case.context_parallel_size = config.actor_rollout_ref.actor.megatron.context_parallel_size
-        test_case.expert_parallel_size = config.actor_rollout_ref.actor.megatron.expert_model_parallel_size
-        test_case.expert_tensor_parallel_size = config.actor_rollout_ref.actor.megatron.expert_tensor_parallel_size
-        test_cases.append(test_case)
-    return test_cases

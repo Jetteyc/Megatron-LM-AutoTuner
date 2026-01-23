@@ -7,14 +7,14 @@ from megatron.core.utils import (
 )
 from torch import Tensor
 
-from transformer_engine.pytorch.attention.dot_product_attention.context_parallel import (
-    AttnFuncWithCPAndKVP2P,
+from transformer_engine.pytorch.attention.dot_product_attention.context_parallel_nvshmem import (
+    AttnFuncWithCPAndKVP2P as AttnFuncWithCPAndKVP2PNVSHMEM,
 )
 
 from .common import CommonOpsForTest
 
 
-class AttnFuncWithCPAndKVP2PWrapper:
+class AttnFuncWithCPAndKVP2PNVSHMEMWrapper:
     def forward(
         self,
         is_training,
@@ -79,12 +79,12 @@ class AttnFuncWithCPAndKVP2PWrapper:
             use_flash_attn_3,
         ]
 
-        return AttnFuncWithCPAndKVP2P.apply(*args)
+        return AttnFuncWithCPAndKVP2PNVSHMEM.apply(*args)
 
     __call__ = forward
 
 
-class AttnFuncWithCPAndKVP2PForTest(AttnFuncWithCPAndKVP2PWrapper, CommonOpsForTest):
+class AttnFuncWithCPAndKVP2PNVSHMEMForTest(AttnFuncWithCPAndKVP2PNVSHMEMWrapper, CommonOpsForTest):
     def __init__(
         self,
         config: TransformerConfig,
@@ -93,12 +93,12 @@ class AttnFuncWithCPAndKVP2PForTest(AttnFuncWithCPAndKVP2PWrapper, CommonOpsForT
         CommonOpsForTest.__init__(
             self,
             hook_activation=hook_activation,
-            module_name="AttnFuncWithCPAndKVP2P",
+            module_name="AttnFuncWithCPAndKVP2PNVSHMEM",
             logging_level=logging.INFO,
         )
         self.config = config
 
-    @nvtx_decorator(message="AttnFuncWithCPAndKVP2P forward")
+    @nvtx_decorator(message="AttnFuncWithCPAndKVP2PNVSHMEM forward")
     def _forward(
         self,
         is_training,

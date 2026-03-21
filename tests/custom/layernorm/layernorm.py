@@ -20,6 +20,17 @@ from transformer_engine.pytorch.module.rmsnorm import RMSNorm
 def draw_performance_plots(results, output_dir="outputs/test/custom/layernorm"):
     import matplotlib.pyplot as plt
 
+    plt.rcParams["font.sans-serif"] = [
+        "Noto Sans CJK SC",
+        "WenQuanYi Zen Hei",
+        "SimHei",
+        "Microsoft YaHei",
+        "PingFang SC",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
     os.makedirs(output_dir, exist_ok=True)
 
     # Extract data
@@ -36,10 +47,10 @@ def draw_performance_plots(results, output_dir="outputs/test/custom/layernorm"):
     fig = plt.figure(figsize=(20, 16))
 
     metrics = [
-        ("rmsnorm_fwd_ms", "RMSNorm Forward"),
-        ("rmsnorm_bwd_ms", "RMSNorm Backward"),
-        ("layernorm_fwd_ms", "LayerNorm Forward"),
-        ("layernorm_bwd_ms", "LayerNorm Backward"),
+        ("rmsnorm_fwd_ms", "RMSNorm 前向"),
+        ("rmsnorm_bwd_ms", "RMSNorm 反向"),
+        ("layernorm_fwd_ms", "LayerNorm 前向"),
+        ("layernorm_bwd_ms", "LayerNorm 反向"),
     ]
 
     for idx, (metric, title) in enumerate(metrics, 1):
@@ -90,9 +101,9 @@ def draw_performance_plots(results, output_dir="outputs/test/custom/layernorm"):
                         alpha=0.7,
                     )
 
-        ax.set_xlabel("Batch Size (B)")
-        ax.set_ylabel("Sequence Length (S)")
-        ax.set_zlabel("Time (ms)")
+        ax.set_xlabel("批大小（B）")
+        ax.set_ylabel("序列长度（S）")
+        ax.set_zlabel("耗时（毫秒）")
         ax.set_title(title)
         ax.legend(fontsize=6, loc="upper left")
 

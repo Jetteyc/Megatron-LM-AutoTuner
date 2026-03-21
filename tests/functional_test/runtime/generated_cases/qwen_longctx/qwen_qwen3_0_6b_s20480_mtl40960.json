@@ -1,0 +1,13 @@
+{
+  "model": "Qwen/Qwen3-0.6B",
+  "cases": [
+    {
+      "batch_size": 64,
+      "micro_batch_size": 4,
+      "seqlen": 20480,
+      "max_token_len": 40960,
+      "shape": "thd",
+      "system": "megatron"
+    }
+  ]
+}

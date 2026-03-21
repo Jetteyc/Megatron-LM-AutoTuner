@@ -27,7 +27,7 @@ SEGMENT_COLORS = {
     "other": "#9AA6B2",
 }
 SYSTEMS = ("baseline", "ours")
-SYSTEM_LABELS = {"baseline": "Baseline", "ours": "Ours"}
+SYSTEM_LABELS = {"baseline": "基线方案", "ours": "优化方案"}
 
 
 def default_output_path() -> Path:
@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--title",
         type=str,
-        default="Latency Breakdown: Baseline vs Ours",
+        default="时延拆解：基线方案 vs 优化方案",
         help="Figure title.",
     )
     parser.add_argument(
@@ -156,7 +156,26 @@ def plot(
     font_size: float,
     dpi: int,
 ) -> None:
-    plt.rcParams.update({"font.size": font_size})
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.size": font_size,
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
     fig, ax = plt.subplots(figsize=(10.2, 5.8))
     x = list(range(len(machines)))
     width = 0.28
@@ -230,13 +249,16 @@ def plot(
 
     ax.set_xticks(x)
     ax.set_xticklabels(machines, fontsize=font_size + 1.0)
-    ax.set_ylabel(f"Latency ({unit})", fontsize=font_size + 3.0)
+    ax.set_ylabel(f"时延（{unit}）", fontsize=font_size + 3.0)
     ax.set_title(title, fontsize=font_size + 5.0)
     ax.grid(axis="y", linestyle="--", linewidth=0.7, alpha=0.4)
     ax.set_axisbelow(True)
 
     segment_handles = [
-        Patch(facecolor=SEGMENT_COLORS[segment], label=segment.capitalize())
+        Patch(
+            facecolor=SEGMENT_COLORS[segment],
+            label={"attn": "注意力", "moe": "MoE", "other": "其他"}[segment],
+        )
         for segment in SEGMENTS
     ]
     system_handles = [
@@ -253,7 +275,7 @@ def plot(
         loc="upper left",
         bbox_to_anchor=(0.58, 0.99),
         ncol=1,
-        title="Components",
+        title="组成部分",
         fontsize=max(font_size - 1.0, 10.0),
         title_fontsize=max(font_size - 0.5, 10.0),
         frameon=False,
@@ -263,7 +285,7 @@ def plot(
         loc="upper right",
         bbox_to_anchor=(0.995, 0.99),
         ncol=1,
-        title="Systems",
+        title="方案",
         fontsize=max(font_size - 1.0, 10.0),
         title_fontsize=max(font_size - 0.5, 10.0),
         frameon=False,

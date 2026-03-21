@@ -423,8 +423,30 @@ def plot_token_balance(
     eplb_gpu: list[float],
 ) -> None:
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
 
-    x = np.arange(ep_size)
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
+
+    x = np.arange(ep_size, dtype=np.float64)
+    x_before = x - 0.12
+    x_eplb = x
+    x_ours = x + 0.12
     title_fontsize = 18
     axis_label_fontsize = 17
     tick_fontsize = 15
@@ -432,16 +454,16 @@ def plot_token_balance(
 
     plt.figure(figsize=(max(10, ep_size * 0.95), 6.2))
     plt.plot(
-        x,
+        x_before,
         old_gpu,
-        marker="o",
+        marker="s",
         markersize=7,
         linewidth=2.3,
         color=COLOR_BEFORE,
-        label="Before reorder",
+        label="Baseline",
     )
     plt.plot(
-        x,
+        x_eplb,
         eplb_gpu,
         marker="o",
         markersize=7,
@@ -450,27 +472,27 @@ def plot_token_balance(
         label="EPLB",
     )
     plt.plot(
-        x,
+        x_ours,
         ours_gpu,
-        marker="o",
+        marker="^",
         markersize=7,
         linewidth=2.3,
         color=COLOR_OURS,
-        label="Our method",
+        label="Ours",
     )
     avg_tokens = float(np.mean(old_gpu))
     plt.axhline(
-        avg_tokens, color="black", linestyle="--", linewidth=1.4, label="Average tokens"
+        avg_tokens, color="black", linestyle="--", linewidth=1.4, label="平均 Token"
     )
     y_values = old_gpu + eplb_gpu + ours_gpu + [avg_tokens]
     y_min = min(y_values)
     y_max = max(y_values)
     y_pad = (y_max - y_min) * 0.08 if y_max > y_min else max(abs(y_min) * 0.05, 1.0)
     plt.ylim(bottom=y_min - y_pad)
-    plt.xlabel("GPU rank", fontsize=axis_label_fontsize)
-    plt.ylabel("Token count (sum over layers)", fontsize=axis_label_fontsize)
-    plt.title(f"Token balance comparison (EP={ep_size})", fontsize=title_fontsize)
-    plt.xticks(x, fontsize=tick_fontsize)
+    plt.xlabel("GPU Rank", fontsize=axis_label_fontsize)
+    plt.ylabel("Token 数量（所有层求和）", fontsize=axis_label_fontsize)
+    plt.title(f"Token 均衡对比（EP={ep_size}）", fontsize=title_fontsize)
+    plt.xticks(x, [str(i) for i in range(ep_size)], fontsize=tick_fontsize)
     plt.yticks(fontsize=tick_fontsize)
     plt.legend(fontsize=legend_fontsize)
     plt.tight_layout()
@@ -482,6 +504,25 @@ def plot_memory_compare_all_eps(
     results_by_ep: dict[int, dict[str, Any]], output_dir: Path
 ) -> None:
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
 
     eps = sorted(results_by_ep.keys())
     x = np.arange(len(eps), dtype=np.float64) * 4.0
@@ -510,7 +551,7 @@ def plot_memory_compare_all_eps(
 
     # Same column bar (stacked): model weights + activation.
     plt.bar(
-        before_x, before_w, width=width, color=COLOR_BEFORE, label="Before: weights"
+        before_x, before_w, width=width, color=COLOR_BEFORE, label="Baseline: 权重"
     )
     plt.bar(
         before_x,
@@ -518,7 +559,7 @@ def plot_memory_compare_all_eps(
         width=width,
         bottom=before_w,
         color=COLOR_BEFORE_LIGHT,
-        label="Before: activation",
+        label="Baseline: 激活",
     )
 
     plt.bar(eplb_x, eplb_w, width=width, color=COLOR_EPLB, label="EPLB: weights")
@@ -531,21 +572,21 @@ def plot_memory_compare_all_eps(
         label="EPLB: activation",
     )
 
-    plt.bar(ours_x, ours_w, width=width, color=COLOR_OURS, label="Our method: weights")
+    plt.bar(ours_x, ours_w, width=width, color=COLOR_OURS, label="Ours: 权重")
     plt.bar(
         ours_x,
         ours_a,
         width=width,
         bottom=ours_w,
         color=COLOR_OURS_LIGHT,
-        label="Our method: activation",
+        label="Ours: 激活",
     )
 
     plt.xticks(x, [str(ep) for ep in eps], fontsize=tick_fontsize)
     plt.yticks(fontsize=tick_fontsize)
-    plt.xlabel("EP size", fontsize=axis_label_fontsize)
-    plt.ylabel("Max GPU memory (GiB)", fontsize=axis_label_fontsize)
-    plt.title("Max GPU memory comparison across EP sizes", fontsize=title_fontsize)
+    plt.xlabel("EP 大小", fontsize=axis_label_fontsize)
+    plt.ylabel("GPU 最大显存（GiB）", fontsize=axis_label_fontsize)
+    plt.title("不同 EP 大小下的 GPU 最大显存对比", fontsize=title_fontsize)
     plt.legend(ncol=3, fontsize=legend_fontsize)
     plt.tight_layout()
     plt.savefig(output_dir / "memory_compare_all_ep_sizes.png", dpi=220)
@@ -556,9 +597,31 @@ def plot_summary_curves(
     results_by_ep: dict[int, dict[str, Any]], output_dir: Path
 ) -> None:
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
 
     eps = sorted(results_by_ep.keys())
-    x = np.arange(len(eps))
+    x = np.arange(len(eps), dtype=np.float64)
+    x_before = x - 0.10
+    x_eplb = x
+    x_ours = x + 0.10
     ep_labels = [str(ep) for ep in eps]
     title_fontsize = 18
     axis_label_fontsize = 17
@@ -585,17 +648,34 @@ def plot_summary_curves(
 
     plt.figure(figsize=(max(10, len(eps) * 0.95), 6.2))
     plt.plot(
-        x, old_var_log10, marker="o", linewidth=2, color=COLOR_BEFORE, label="Before"
+        x_before,
+        old_var_log10,
+        marker="s",
+        linewidth=2,
+        color=COLOR_BEFORE,
+        label="Baseline",
     )
-    plt.plot(x, eplb_var_log10, marker="o", linewidth=2, color=COLOR_EPLB, label="EPLB")
     plt.plot(
-        x, ours_var_log10, marker="o", linewidth=2, color=COLOR_OURS, label="Our method"
+        x_eplb,
+        eplb_var_log10,
+        marker="o",
+        linewidth=2,
+        color=COLOR_EPLB,
+        label="EPLB",
+    )
+    plt.plot(
+        x_ours,
+        ours_var_log10,
+        marker="^",
+        linewidth=2,
+        color=COLOR_OURS,
+        label="Ours",
     )
     plt.ylim(y_axis_min, y_axis_max)
     plt.yticks(np.arange(y_tick_start, y_tick_end + 1, 1), fontsize=tick_fontsize)
-    plt.xlabel("EP size", fontsize=axis_label_fontsize)
-    plt.ylabel("Global token variance (log10)", fontsize=axis_label_fontsize)
-    plt.title("Token variance across EP sizes (log10)", fontsize=title_fontsize)
+    plt.xlabel("EP 大小", fontsize=axis_label_fontsize)
+    plt.ylabel("全局 Token 方差（log10）", fontsize=axis_label_fontsize)
+    plt.title("不同 EP 大小下的 Token 方差对比（log10）", fontsize=title_fontsize)
     plt.xticks(x, ep_labels, fontsize=tick_fontsize)
     plt.legend(fontsize=legend_fontsize)
     plt.tight_layout()

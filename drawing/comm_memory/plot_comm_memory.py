@@ -86,7 +86,26 @@ def plot(
     dpi: int,
     font_size: float,
 ) -> None:
-    plt.rcParams.update({"font.size": font_size})
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.size": font_size,
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
     x = list(range(len(systems)))
     fig, ax = plt.subplots(figsize=(8.6, 5.4))
     ax_runtime = ax.twinx()
@@ -100,7 +119,7 @@ def plot(
         total_x,
         total_values,
         color="#F58518",
-        label="total",
+        label="总显存",
         width=bar_width,
         alpha=0.85,
     )
@@ -108,7 +127,7 @@ def plot(
         runtime_x,
         runtime_values,
         color="#4C78A8",
-        label="runtime",
+        label="运行时显存",
         width=bar_width,
         alpha=0.9,
     )
@@ -117,7 +136,7 @@ def plot(
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             total_v + 0.35,
-            f"{total_v:.2f} GB",
+            f"{total_v:.2f}",
             ha="center",
             va="bottom",
             fontsize=total_label_size,
@@ -136,12 +155,10 @@ def plot(
 
     ax.set_xticks(x)
     ax.set_xticklabels(systems, fontsize=font_size)
-    ax.set_ylabel("Total Memory (GB)", fontsize=font_size + 1.0, color="#A04E09")
-    ax_runtime.set_ylabel(
-        "Runtime Memory (GB)", fontsize=font_size + 1.0, color="#2E5E8C"
-    )
+    ax.set_ylabel("总显存（GB）", fontsize=font_size + 1.0, color="#A04E09")
+    ax_runtime.set_ylabel("运行时显存（GB）", fontsize=font_size + 1.0, color="#2E5E8C")
     ax.set_title(
-        "Memory Saving with Memory-Efficient Communication Library",
+        "高效通信库显存节省",
         fontsize=font_size + 2.0,
     )
     ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.4)

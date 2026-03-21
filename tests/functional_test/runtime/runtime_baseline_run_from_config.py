@@ -61,6 +61,12 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="torchrun --node_rank.",
     )
+    parser.add_argument(
+        "--nproc-per-node",
+        type=int,
+        default=None,
+        help="torchrun --nproc_per_node. If not set, will use all available GPUs on the node.",
+    )
     return parser.parse_args()
 
 
@@ -220,7 +226,7 @@ def build_parallel(
         get_first(
             parallel_cfg,
             ["vpp_size", "vpp"],
-            get_first(merged_cfg, ["vpp_size", "vpp"], 2),
+            get_first(merged_cfg, ["vpp_size", "vpp"], None),
         ),
         "vpp_size",
     )
@@ -291,6 +297,15 @@ def build_runtime(
         get_first(runtime_cfg, ["no_ddp"], merged_cfg.get("no_ddp", False)),
         "no_ddp",
     )
+    use_fused_kernels = parse_bool(
+        get_first(
+            runtime_cfg,
+            ["use_fused_kernels"],
+            merged_cfg.get("use_fused_kernels", None),
+        ),
+        "use_fused_kernels",
+        allow_none=True,
+    )
     config_dir = get_first(runtime_cfg, ["config_dir"], merged_cfg.get("config_dir"))
     override_model_config_file = get_first(
         runtime_cfg,
@@ -315,6 +330,7 @@ def build_runtime(
         "share_emb": share_emb,
         "run_one_data": run_one_data,
         "no_ddp": no_ddp,
+        "use_fused_kernels": use_fused_kernels,
         "config_dir": config_dir,
         "override_model_config_file": override_model_config_file,
         "override_tf_config_file": override_tf_config_file,
@@ -334,6 +350,7 @@ def build_distributed(args: argparse.Namespace) -> dict[str, Any]:
         "master_port": master_port,
         "num_nodes": num_nodes,
         "node_rank": node_rank,
+        "nproc_per_node": args.nproc_per_node,
     }
 
 
@@ -413,6 +430,17 @@ def build_run_spec(
         * parallel_info["etp_size"]
         * parallel_info["pp_size"]
     )
+    nproc_per_node = distributed_info.get("nproc_per_node") or gpus_per_node
+    if nproc_per_node < gpus_per_node:
+        raise ValueError(
+            "nproc_per_node must be >= tp*cp*ep*etp*pp, got "
+            f"nproc_per_node={nproc_per_node} required_min={gpus_per_node}"
+        )
+    if nproc_per_node % gpus_per_node != 0:
+        raise ValueError(
+            "nproc_per_node must be divisible by tp*cp*ep*etp*pp, got "
+            f"nproc_per_node={nproc_per_node} divisor={gpus_per_node}"
+        )
 
     return {
         "model_name": model_name,
@@ -421,6 +449,7 @@ def build_run_spec(
         "test_cases_path": test_cases_path,
         "output_dir": output_dir,
         "gpus_per_node": gpus_per_node,
+        "nproc_per_node": nproc_per_node,
         "case": case_info,
         "parallel": parallel_info,
         "runtime": runtime_info,
@@ -440,7 +469,7 @@ def build_command(spec: dict[str, Any]) -> list[str]:
         "-m",
         "torch.distributed.run",
         "--nproc_per_node",
-        str(spec["gpus_per_node"]),
+        str(spec["nproc_per_node"]),
         "--nnodes",
         str(dist["num_nodes"]),
         "--node_rank",
@@ -495,6 +524,13 @@ def build_command(spec: dict[str, Any]) -> list[str]:
         cmd.append("--run-one-data")
     if runtime["no_ddp"]:
         cmd.append("--no-ddp")
+    if runtime["use_fused_kernels"] is not None:
+        cmd.extend(
+            [
+                "--use-fused-kernels",
+                "true" if runtime["use_fused_kernels"] else "false",
+            ]
+        )
     if runtime["config_dir"]:
         cmd.extend(["--config-dir", str(runtime["config_dir"])])
     if runtime["override_model_config_file"]:

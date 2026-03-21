@@ -12,6 +12,7 @@ class StageParamStats:
     runtime_layer_count: int
     runtime_total_param_bytes: int
     runtime_decoder_param_bytes: int
+    total_device_bytes: int
 
     @property
     def runtime_non_decoder_param_bytes(self) -> int:
@@ -27,6 +28,10 @@ class StageTimingStats:
     runtime_forward_total_time_s: float
     runtime_backward_total_time_s: float
     num_microbatches: int
+
+
+class RuntimeSimulationOOMError(RuntimeError):
+    """Raised when the simulated full stage parameters cannot fit on device."""
 
 
 def build_chunk_layer_counts(
@@ -254,6 +259,32 @@ def estimate_full_stage_param_bytes(
     return full_stage_param_bytes
 
 
+def validate_full_stage_param_fit(
+    stage_stats: list[StageParamStats],
+    full_stage_param_bytes: list[int],
+) -> None:
+    if len(stage_stats) != len(full_stage_param_bytes):
+        raise ValueError("stage_stats and full_stage_param_bytes must have same length")
+
+    oom_messages: list[str] = []
+    for stats, param_bytes in zip(stage_stats, full_stage_param_bytes):
+        if param_bytes <= stats.total_device_bytes:
+            continue
+        oom_messages.append(
+            "pp_rank={pp_rank} required={required} available={available}".format(
+                pp_rank=stats.pp_rank,
+                required=param_bytes,
+                available=stats.total_device_bytes,
+            )
+        )
+
+    if oom_messages:
+        raise RuntimeSimulationOOMError(
+            "Simulated config OOM: full-model stage parameters exceed device memory for "
+            + ", ".join(oom_messages)
+        )
+
+
 def simulate_full_iteration(
     observed_iteration_time_s: float,
     num_microbatches: int,
@@ -285,6 +316,14 @@ def simulate_full_iteration(
     runtime_stage_param_bytes = [
         stats.runtime_total_param_bytes for stats in stage_param_stats
     ]
+    full_stage_param_bytes = estimate_full_stage_param_bytes(
+        stage_stats=stage_param_stats,
+        full_stage_layer_counts=full_stage_layer_counts,
+    )
+    validate_full_stage_param_fit(
+        stage_stats=stage_param_stats,
+        full_stage_param_bytes=full_stage_param_bytes,
+    )
     runtime_dp_stage_times_s = [
         estimate_dp_allreduce_time_s(
             payload_bytes=payload_bytes,
@@ -328,16 +367,6 @@ def simulate_full_iteration(
         num_microbatches=num_microbatches,
     )
     runtime_pp_schedule_time_s = runtime_pipeline["total_time_s"]
-    pp_time_scale = 0.0
-    if runtime_pp_schedule_time_s > 0:
-        pp_time_scale = observed_pp_compute_time_s / runtime_pp_schedule_time_s
-
-    full_stage_forward_times_s = [
-        time_s * pp_time_scale for time_s in full_stage_forward_times_s
-    ]
-    full_stage_backward_times_s = [
-        time_s * pp_time_scale for time_s in full_stage_backward_times_s
-    ]
     full_pipeline = simulate_train_pipeline_1f1b(
         stage_forward_times_s=full_stage_forward_times_s,
         stage_backward_times_s=full_stage_backward_times_s,
@@ -345,10 +374,6 @@ def simulate_full_iteration(
     )
     simulated_pp_compute_time_s = full_pipeline["total_time_s"]
 
-    full_stage_param_bytes = estimate_full_stage_param_bytes(
-        stage_stats=stage_param_stats,
-        full_stage_layer_counts=full_stage_layer_counts,
-    )
     dp_stage_allreduce_times_s = [
         estimate_dp_allreduce_time_s(
             payload_bytes=payload_bytes,
@@ -378,7 +403,7 @@ def simulate_full_iteration(
         "full_stage_forward_times_s": full_stage_forward_times_s,
         "full_stage_backward_times_s": full_stage_backward_times_s,
         "runtime_pp_schedule_time_s": runtime_pp_schedule_time_s,
-        "runtime_pp_schedule_scale": pp_time_scale,
+        "runtime_pp_schedule_scale": 1.0,
         "runtime_stage_param_bytes": runtime_stage_param_bytes,
         "full_stage_param_bytes": full_stage_param_bytes,
         "runtime_dp_stage_allreduce_times_s": runtime_dp_stage_times_s,

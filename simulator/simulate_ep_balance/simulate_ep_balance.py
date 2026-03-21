@@ -311,6 +311,25 @@ def simulate_for_ep(
 
 def plot_ep_gpu_tokens(ep_result: EpBalanceResult, output_dir: Path) -> None:
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
 
     ep_size = ep_result.ep_size
     old_gpu = np.array(ep_result.global_gpu_tokens_old, dtype=np.int64)
@@ -320,11 +339,11 @@ def plot_ep_gpu_tokens(ep_result: EpBalanceResult, output_dir: Path) -> None:
     width = 0.38
 
     plt.figure(figsize=(max(8, ep_size * 0.6), 4.8))
-    plt.bar(x - width / 2, old_gpu, width=width, label="Before reorder")
-    plt.bar(x + width / 2, new_gpu, width=width, label="After reorder")
-    plt.xlabel("GPU rank")
-    plt.ylabel("Token count (sum over all layers)")
-    plt.title(f"EP={ep_size} GPU token balance")
+    plt.bar(x - width / 2, old_gpu, width=width, label="Baseline")
+    plt.bar(x + width / 2, new_gpu, width=width, label="Ours")
+    plt.xlabel("GPU Rank")
+    plt.ylabel("Token 数量（所有层求和）")
+    plt.title(f"EP={ep_size} 的 GPU Token 均衡情况")
     plt.xticks(x)
     plt.legend()
     plt.tight_layout()
@@ -336,35 +355,42 @@ def plot_ep_variance_summary(
     ep_results: list[EpBalanceResult], output_dir: Path
 ) -> None:
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
 
     eps = [r.ep_size for r in ep_results]
     global_old = [r.global_variance_old for r in ep_results]
     global_new = [r.global_variance_new for r in ep_results]
-    layer_old = [r.mean_layer_variance_old for r in ep_results]
-    layer_new = [r.mean_layer_variance_new for r in ep_results]
 
     plt.figure(figsize=(10, 5))
-    plt.plot(eps, global_old, marker="o", linewidth=2, label="Global variance (before)")
-    plt.plot(eps, global_new, marker="o", linewidth=2, label="Global variance (after)")
     plt.plot(
         eps,
-        layer_old,
-        marker="s",
-        linestyle="--",
-        linewidth=1.6,
-        label="Mean layer variance (before)",
+        global_old,
+        marker="o",
+        linewidth=2,
+        label="Baseline",
     )
-    plt.plot(
-        eps,
-        layer_new,
-        marker="s",
-        linestyle="--",
-        linewidth=1.6,
-        label="Mean layer variance (after)",
-    )
-    plt.xlabel("EP size")
-    plt.ylabel("Variance")
-    plt.title("Variance comparison across EP sizes")
+    plt.plot(eps, global_new, marker="o", linewidth=2, label="Ours")
+    plt.xlabel("EP 大小")
+    plt.ylabel("方差")
+    plt.title("不同 EP 大小下的方差对比")
     plt.xticks(eps)
     plt.legend()
     plt.tight_layout()

@@ -21,6 +21,17 @@ def plot_results(results, output_dir: str):
     """
     import matplotlib.pyplot as plt
 
+    plt.rcParams["font.sans-serif"] = [
+        "Noto Sans CJK SC",
+        "WenQuanYi Zen Hei",
+        "SimHei",
+        "Microsoft YaHei",
+        "PingFang SC",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
     fig = plt.figure(figsize=(16, 6))
 
     # Extract data
@@ -62,16 +73,16 @@ def plot_results(results, output_dir: str):
         ax2.scatter(seq_lengths, vocab_sizes, backward_times, marker="o")
 
     # Forward pass subplot
-    ax1.set_xlabel("Sequence Length")
-    ax1.set_ylabel("Vocabulary Size")
-    ax1.set_zlabel("Forward Time (ms)")
-    ax1.set_title("Forward Pass Time")
+    ax1.set_xlabel("序列长度")
+    ax1.set_ylabel("词表大小")
+    ax1.set_zlabel("前向耗时（毫秒）")
+    ax1.set_title("前向耗时")
 
     # Backward pass subplot
-    ax2.set_xlabel("Sequence Length")
-    ax2.set_ylabel("Vocabulary Size")
-    ax2.set_zlabel("Backward Time (ms)")
-    ax2.set_title("Backward Pass Time")
+    ax2.set_xlabel("序列长度")
+    ax2.set_ylabel("词表大小")
+    ax2.set_zlabel("反向耗时（毫秒）")
+    ax2.set_title("反向耗时")
 
     plt.tight_layout()
     plt.savefig(

@@ -21,6 +21,11 @@ from AutoTuner.runtime.baseline.simulator import (
     build_pp_stage_layer_counts,
     simulate_full_iteration,
 )
+from AutoTuner.runtime.baseline.perf_metrics import (
+    calculate_mfu,
+    calculate_per_gpu_mfu,
+    normalize_promised_tflops,
+)
 from AutoTuner.testbench.ops.gpt_model import GPTModelForTest
 from AutoTuner.utils.config import (
     get_hf_model_config,
@@ -222,6 +227,8 @@ class RuntimeLauncher:
         self._microbatch_counter = 0
         self._tp_overlap_tokens = None
         self._tp_overlap_disabled_logged = False
+        self._promised_tflops_fallback_logged = False
+        self._promised_tflops_unresolved_logged = False
         self.test_cases = test_cases
         self.tp_comm_overlap_cfg = tp_comm_overlap_cfg
         self.wrap_with_ddp = wrap_with_ddp
@@ -449,16 +456,25 @@ class RuntimeLauncher:
             return self.model
         return [self.model]
 
+    @staticmethod
+    def _get_timing_modules(model_chunk):
+        unwrapped = unwrap_model(model_chunk)
+        decoder = getattr(unwrapped, "decoder", None)
+        layers = [] if decoder is None else list(getattr(decoder, "layers", []))
+        if layers:
+            return layers
+        return [decoder if decoder is not None else unwrapped]
+
     def _register_stage_timers(self) -> list[_ModuleCudaTimer]:
         timers: list[_ModuleCudaTimer] = []
         for model_chunk in self._iter_model_chunks():
-            timer = _ModuleCudaTimer()
-            module = unwrap_model(model_chunk)
-            module.register_forward_pre_hook(timer.forward_pre_hook)
-            module.register_forward_hook(timer.forward_hook)
-            module.register_full_backward_pre_hook(timer.backward_pre_hook)
-            module.register_full_backward_hook(timer.backward_hook)
-            timers.append(timer)
+            for module in self._get_timing_modules(model_chunk):
+                timer = _ModuleCudaTimer()
+                module.register_forward_pre_hook(timer.forward_pre_hook)
+                module.register_forward_hook(timer.forward_hook)
+                module.register_full_backward_pre_hook(timer.backward_pre_hook)
+                module.register_full_backward_hook(timer.backward_hook)
+                timers.append(timer)
         return timers
 
     def _reset_stage_timers(self):
@@ -471,10 +487,11 @@ class RuntimeLauncher:
         forward_total_time_s = 0.0
         backward_total_time_s = 0.0
         runtime_layer_count = 0
-        for timer, model_chunk in zip(self._stage_timers, self._iter_model_chunks()):
+        for timer in self._stage_timers:
             chunk_forward_time_s, chunk_backward_time_s = timer.summary()
             forward_total_time_s += chunk_forward_time_s
             backward_total_time_s += chunk_backward_time_s
+        for model_chunk in self._iter_model_chunks():
             runtime_layer_count += len(
                 list(
                     getattr(
@@ -610,12 +627,14 @@ class RuntimeLauncher:
                 total_param_bytes += param_bytes
                 if param_id in decoder_param_ids:
                     decoder_param_bytes += param_bytes
+        _, total_device_bytes = torch.cuda.mem_get_info(torch.cuda.current_device())
 
         return StageParamStats(
             pp_rank=mpu.get_pipeline_model_parallel_rank(),
             runtime_layer_count=runtime_layer_count,
             runtime_total_param_bytes=total_param_bytes,
             runtime_decoder_param_bytes=decoder_param_bytes,
+            total_device_bytes=int(total_device_bytes),
         )
 
     def _gather_stage_param_stats(self) -> list[StageParamStats]:
@@ -626,12 +645,27 @@ class RuntimeLauncher:
         stage_stats_by_pp_rank: dict[int, StageParamStats] = {}
         for stage_stats in gathered_stats:
             existing = stage_stats_by_pp_rank.get(stage_stats.pp_rank)
-            if (
-                existing is None
-                or stage_stats.runtime_total_param_bytes
-                > existing.runtime_total_param_bytes
-            ):
+            if existing is None:
                 stage_stats_by_pp_rank[stage_stats.pp_rank] = stage_stats
+                continue
+
+            stage_stats_by_pp_rank[stage_stats.pp_rank] = StageParamStats(
+                pp_rank=stage_stats.pp_rank,
+                runtime_layer_count=max(
+                    existing.runtime_layer_count, stage_stats.runtime_layer_count
+                ),
+                runtime_total_param_bytes=max(
+                    existing.runtime_total_param_bytes,
+                    stage_stats.runtime_total_param_bytes,
+                ),
+                runtime_decoder_param_bytes=max(
+                    existing.runtime_decoder_param_bytes,
+                    stage_stats.runtime_decoder_param_bytes,
+                ),
+                total_device_bytes=min(
+                    existing.total_device_bytes, stage_stats.total_device_bytes
+                ),
+            )
 
         pp_size = max(1, mpu.get_pipeline_model_parallel_world_size())
         missing_pp_ranks = [
@@ -811,18 +845,19 @@ class RuntimeLauncher:
     def _collect_batch_seqlens(
         self, test_case: InputTestCase, num_microbatches: int
     ) -> list[int]:
-        micro_batches = self.datasets.data[test_case][:num_microbatches]
-        batch_seqlens: list[int] = []
-        for micro_batch in micro_batches:
-            attention_mask = micro_batch["attention_mask"]
-            if attention_mask.is_floating_point():
-                attention_mask = attention_mask > 0
-            seqlens = attention_mask.to(torch.int64).sum(dim=1).tolist()
-            batch_seqlens.extend(seqlens)
-        return batch_seqlens
+        total_sequences = max(0, int(num_microbatches)) * max(
+            0, int(test_case.micro_batch_size)
+        )
+        return [int(test_case.seqlen)] * total_sequences
 
     def _compute_perf_metrics(
-        self, batch_seqlens: list[int], delta_time: float, world_size: int
+        self,
+        batch_seqlens: list[int],
+        delta_time: float,
+        world_size: int,
+        *,
+        estimated_flops_scale: float,
+        fallback_num_hidden_layers: int,
     ) -> dict:
         total_tokens = sum(batch_seqlens)
         total_sequences = len(batch_seqlens)
@@ -839,15 +874,39 @@ class RuntimeLauncher:
             batch_seqlens, delta_time
         )
         if estimated_flops == 0.0:
-            estimated_flops = self._estimate_generic_flops(batch_seqlens, delta_time)
+            estimated_flops = self._estimate_generic_flops(
+                batch_seqlens,
+                delta_time,
+                num_hidden_layers=fallback_num_hidden_layers,
+            )
         else:
-            estimated_flops *= self.flops_layer_scale
-        if promised_flops in (0, float("inf")):
-            promised_flops = 0.0
-        if promised_flops == 0:
-            mfu = 0.0
-        else:
-            mfu = estimated_flops / promised_flops / world_size
+            estimated_flops *= estimated_flops_scale
+        normalized_promised_flops = normalize_promised_tflops(promised_flops)
+        if normalized_promised_flops != promised_flops:
+            if normalized_promised_flops > 0 and not self._promised_tflops_fallback_logged:
+                self._log(
+                    "runtime baseline promised TFLOPS fallback engaged: "
+                    f"verl_reported={promised_flops} "
+                    f"fallback={normalized_promised_flops}"
+                )
+                self._promised_tflops_fallback_logged = True
+            elif (
+                normalized_promised_flops <= 0
+                and not self._promised_tflops_unresolved_logged
+            ):
+                self._log(
+                    "runtime baseline could not resolve promised TFLOPS from "
+                    f"verl_reported={promised_flops}; MFU will remain 0.0",
+                    level=logging.WARNING,
+                )
+                self._promised_tflops_unresolved_logged = True
+        dp_world_size = max(1, mpu.get_data_parallel_world_size())
+        model_parallel_world_size = max(1, world_size // dp_world_size)
+        mfu = calculate_per_gpu_mfu(
+            estimated_flops,
+            normalized_promised_flops,
+            model_parallel_world_size,
+        )
 
         return {
             "total_tokens": total_tokens,
@@ -858,17 +917,23 @@ class RuntimeLauncher:
             "throughput_sequences_s": throughput_seqs_s,
             "throughput_sequences_s_per_gpu": throughput_seqs_s_per_gpu,
             "mfu": mfu,
+            "estimated_tflops": estimated_flops,
+            "promised_tflops": normalized_promised_flops,
+            "model_parallel_world_size": model_parallel_world_size,
         }
 
     def _estimate_generic_flops(
-        self, batch_seqlens: list[int], delta_time: float
+        self,
+        batch_seqlens: list[int],
+        delta_time: float,
+        *,
+        num_hidden_layers: int,
     ) -> float:
         if delta_time <= 0:
             return float("inf")
         config = getattr(self.hf_config, "text_config", self.hf_config)
         hidden_size = config.hidden_size
         vocab_size = config.vocab_size
-        num_hidden_layers = self.runtime_total_layers
         num_attention_heads = config.num_attention_heads
         num_key_value_heads = getattr(
             config, "num_key_value_heads", num_attention_heads
@@ -1092,7 +1157,11 @@ class RuntimeLauncher:
                 self._log_progress(f"iter_{iteration}_stage_timing_gather_exit")
 
                 metrics = self._compute_perf_metrics(
-                    batch_seqlens, delta_time, world_size
+                    batch_seqlens,
+                    delta_time,
+                    world_size,
+                    estimated_flops_scale=self.flops_layer_scale,
+                    fallback_num_hidden_layers=self.runtime_total_layers,
                 )
                 simulation = simulate_full_iteration(
                     observed_iteration_time_s=delta_time,
@@ -1113,7 +1182,11 @@ class RuntimeLauncher:
                     latency_s=self.simulation_context["dp_allreduce_latency_s"],
                 )
                 simulated_perf_metrics = self._compute_perf_metrics(
-                    batch_seqlens, simulation["simulated_time_s"], world_size
+                    batch_seqlens,
+                    simulation["simulated_time_s"],
+                    world_size,
+                    estimated_flops_scale=1.0,
+                    fallback_num_hidden_layers=self.original_total_layers,
                 )
                 metrics["iteration"] = iteration
                 metrics["memory_by_rank"] = memory_by_rank

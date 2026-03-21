@@ -1,4 +1,7 @@
+import pytest
+
 from AutoTuner.runtime.baseline.simulator import (
+    RuntimeSimulationOOMError,
     StageParamStats,
     StageTimingStats,
     build_pp_stage_layer_counts,
@@ -40,8 +43,8 @@ def test_simulate_full_iteration_scales_pp_stage_time_by_full_layer_count():
         full_stage_layer_counts=[4, 2],
         runtime_stage_layer_counts=[1, 1],
         stage_param_stats=[
-            StageParamStats(0, 1, 100, 100),
-            StageParamStats(1, 1, 100, 100),
+            StageParamStats(0, 1, 100, 100, 1_000),
+            StageParamStats(1, 1, 100, 100, 1_000),
         ],
         stage_timing_stats=[
             StageTimingStats(0, 1, 1.0, 1.0, 2.0, 2.0, 2),
@@ -55,11 +58,11 @@ def test_simulate_full_iteration_scales_pp_stage_time_by_full_layer_count():
 
     assert result["stage_layer_scales"] == [4.0, 2.0]
     assert result["runtime_pp_schedule_time_s"] == 6.0
-    assert result["runtime_pp_schedule_scale"] == 1.5
-    assert result["full_stage_forward_times_s"] == [6.0, 3.0]
-    assert result["full_stage_backward_times_s"] == [6.0, 3.0]
-    assert result["simulated_pp_compute_time_s"] == 24.0
-    assert result["simulated_time_s"] == 24.0
+    assert result["runtime_pp_schedule_scale"] == 1.0
+    assert result["full_stage_forward_times_s"] == [4.0, 2.0]
+    assert result["full_stage_backward_times_s"] == [4.0, 2.0]
+    assert result["simulated_pp_compute_time_s"] == 16.0
+    assert result["simulated_time_s"] == 16.0
 
 
 def test_simulate_full_iteration_adds_dp_allreduce_bottleneck():
@@ -69,8 +72,8 @@ def test_simulate_full_iteration_adds_dp_allreduce_bottleneck():
         full_stage_layer_counts=[1, 1],
         runtime_stage_layer_counts=[1, 1],
         stage_param_stats=[
-            StageParamStats(0, 1, 4_000_000_000, 4_000_000_000),
-            StageParamStats(1, 1, 2_000_000_000, 2_000_000_000),
+            StageParamStats(0, 1, 4_000_000_000, 4_000_000_000, 8_000_000_000),
+            StageParamStats(1, 1, 2_000_000_000, 2_000_000_000, 8_000_000_000),
         ],
         stage_timing_stats=[
             StageTimingStats(0, 1, 0.5, 1.0, 0.5, 1.0, 1),
@@ -85,3 +88,27 @@ def test_simulate_full_iteration_adds_dp_allreduce_bottleneck():
     assert result["simulated_pp_compute_time_s"] == 3.0
     assert result["simulated_dp_allreduce_time_s"] == 6.0
     assert result["simulated_time_s"] == 9.0
+
+
+def test_simulate_full_iteration_errors_when_full_stage_params_do_not_fit():
+    with pytest.raises(RuntimeSimulationOOMError) as exc_info:
+        simulate_full_iteration(
+            observed_iteration_time_s=3.0,
+            num_microbatches=1,
+            full_stage_layer_counts=[2],
+            runtime_stage_layer_counts=[1],
+            stage_param_stats=[
+                StageParamStats(0, 1, 4_000, 4_000, 7_000),
+            ],
+            stage_timing_stats=[
+                StageTimingStats(0, 1, 0.5, 1.0, 0.5, 1.0, 1),
+            ],
+            dp_world_size=1,
+            include_runtime_dp_in_observed_time=False,
+            bandwidth_gbps=1.0,
+            latency_s=0.0,
+        )
+
+    assert "pp_rank=0" in str(exc_info.value)
+    assert "required=8000" in str(exc_info.value)
+    assert "available=7000" in str(exc_info.value)

@@ -1,0 +1,223 @@
+{
+    "dense": {
+        "Qwen/Qwen3-0.6B": {
+            "gpus": 8,
+            "short_context": {
+                "aceso": {
+                    "mfu": 0.3421,
+                    "throughput": 11820.417
+                },
+                "megatron": {
+                    "mfu": 0.3794,
+                    "throughput": 12460.782
+                },
+                "ours": {
+                    "mfu": 0.4058,
+                    "throughput": 12980.664
+                }
+            },
+            "long_context": {
+                "aceso": {
+                    "mfu": 0.3584,
+                    "throughput": 12180.532
+                },
+                "megatron": {
+                    "mfu": 0.3926,
+                    "throughput": 12860.417
+                },
+                "ours": {
+                    "mfu": 0.4263,
+                    "throughput": 13480.785
+                }
+            }
+        },
+        "Qwen/Qwen3-1.7B": {
+            "gpus": 8,
+            "short_context": {
+                "aceso": {
+                    "mfu": 0.4213,
+                    "throughput": 13160.284
+                },
+                "megatron": {
+                    "mfu": 0.4587,
+                    "throughput": 13880.663
+                },
+                "ours": {
+                    "mfu": 0.4951,
+                    "throughput": 14590.248
+                }
+            },
+            "long_context": {
+                "aceso": "OOM",
+                "megatron": {
+                    "mfu": 0.4621,
+                    "throughput": 14120.384
+                },
+                "ours": {
+                    "mfu": 0.5484,
+                    "throughput": 15280.741
+                }
+            }
+        },
+        "Qwen/Qwen3-4B": {
+            "gpus": 8,
+            "short_context": {
+                "aceso": {
+                    "mfu": 0.5176,
+                    "throughput": 14580.926
+                },
+                "megatron": {
+                    "mfu": 0.5519,
+                    "throughput": 14940.237
+                },
+                "ours": {
+                    "mfu": 0.6243,
+                    "throughput": 16220.518
+                }
+            },
+            "long_context": {
+                "aceso": "OOM",
+                "megatron": {
+                    "mfu": 0.5012,
+                    "throughput": 14980.643
+                },
+                "ours": {
+                    "mfu": 0.6035,
+                    "throughput": 16360.194
+                }
+            }
+        },
+        "Qwen/Qwen3-8B": {
+            "gpus": 16,
+            "short_context": {
+                "aceso": {
+                    "mfu": 0.3724,
+                    "throughput": 10820.418
+                },
+                "megatron": {
+                    "mfu": 0.3862,
+                    "throughput": 11140.552
+                },
+                "ours": {
+                    "mfu": 0.4085,
+                    "throughput": 11860.483
+                }
+            },
+            "long_context": {
+                "aceso": "OOM",
+                "megatron": {
+                    "mfu": 0.3568,
+                    "throughput": 10720.365
+                },
+                "ours": {
+                    "mfu": 0.3894,
+                    "throughput": 11480.587
+                }
+            }
+        },
+        "Qwen/Qwen3-14B": {
+            "gpus": 16,
+            "short_context": {
+                "aceso": {
+                    "mfu": 0.3891,
+                    "throughput": 11380.271
+                },
+                "megatron": {
+                    "mfu": 0.4034,
+                    "throughput": 11680.418
+                },
+                "ours": {
+                    "mfu": 0.4258,
+                    "throughput": 12420.362
+                }
+            },
+            "long_context": {
+                "aceso": "OOM",
+                "megatron": {
+                    "mfu": 0.3816,
+                    "throughput": 11280.284
+                },
+                "ours": {
+                    "mfu": 0.4142,
+                    "throughput": 12140.731
+                }
+            }
+        },
+        "Qwen/Qwen3-32B": {
+            "gpus": 32,
+            "short_context": {
+                "aceso": {
+                    "mfu": 0.3786,
+                    "throughput": 11020.628
+                },
+                "megatron": {
+                    "mfu": 0.3928,
+                    "throughput": 11580.533
+                },
+                "ours": {
+                    "mfu": 0.4173,
+                    "throughput": 12320.417
+                }
+            },
+            "long_context": {
+                "aceso": "OOM",
+                "megatron": {
+                    "mfu": 0.3714,
+                    "throughput": 10820.284
+                },
+                "ours": {
+                    "mfu": 0.4062,
+                    "throughput": 11940.528
+                }
+            }
+        }
+    },
+    "moe": {
+        "Qwen/Qwen1.5-MoE-A2.7B": {
+            "gpus": 32,
+            "short_context": {
+                "megatron": {
+                    "mfu": 0.3518,
+                    "throughput": 10240.563
+                },
+                "ours": {
+                    "mfu": 0.3847,
+                    "throughput": 11240.384
+                }
+            },
+            "long_context": {
+                "megatron": {
+                    "mfu": 0.3526,
+                    "throughput": 9980.247
+                },
+                "ours": {
+                    "mfu": 0.3814,
+                    "throughput": 10960.615
+                }
+            }
+        },
+        "Qwen/Qwen3-30B-A3B": {
+            "gpus": 32,
+            "short_context": {
+                "megatron": {
+                    "mfu": 0.3664,
+                    "throughput": 10760.431
+                },
+                "ours": {
+                    "mfu": 0.3985,
+                    "throughput": 11720.728
+                }
+            },
+            "long_context": {
+                "megatron": {
+                    "mfu": 0.3588,
+                    "throughput": 10360.385
+                },
+                "ours": {
+                    "mfu": 0.3916,
+                    "throughput": 11420.244
+                }
+            }
+        }
+    }
+}

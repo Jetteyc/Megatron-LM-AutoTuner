@@ -115,6 +115,17 @@ def plot_results(args, results):
     """Plot forward/backward time vs batch size and sequence length"""
     import matplotlib.pyplot as plt
 
+    plt.rcParams["font.sans-serif"] = [
+        "Noto Sans CJK SC",
+        "WenQuanYi Zen Hei",
+        "SimHei",
+        "Microsoft YaHei",
+        "PingFang SC",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
     # Extract unique batch sizes and sequence lengths
     batch_sizes = sorted(list(set([r["batch_size"] for r in results])))
     seq_lens = sorted(list(set([r["seq_len"] for r in results])))
@@ -150,9 +161,9 @@ def plot_results(args, results):
         ax2.plot(seqs, fwd, marker="o", label=f"FWD (bsz={bsz})")
         ax2.plot(seqs, bwd, marker="s", linestyle="--", label=f"BWD (bsz={bsz})")
 
-    ax2.set_xlabel("Sequence Length")
-    ax2.set_ylabel("Time (ms)")
-    ax2.set_title("Forward/Backward Time vs Sequence Length")
+    ax2.set_xlabel("序列长度")
+    ax2.set_ylabel("耗时（毫秒）")
+    ax2.set_title("前向/反向耗时与序列长度关系")
     ax2.legend()
     ax2.grid(True, alpha=0.3)
 

@@ -15,6 +15,17 @@ from transformer_engine.pytorch.module.linear import Linear
 def draw_performance_plots(results, output_dir="outputs/test/custom/linear"):
     import matplotlib.pyplot as plt
 
+    plt.rcParams["font.sans-serif"] = [
+        "Noto Sans CJK SC",
+        "WenQuanYi Zen Hei",
+        "SimHei",
+        "Microsoft YaHei",
+        "PingFang SC",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
     os.makedirs(output_dir, exist_ok=True)
 
     # Extract data
@@ -31,8 +42,8 @@ def draw_performance_plots(results, output_dir="outputs/test/custom/linear"):
     fig = plt.figure(figsize=(20, 8))
 
     metrics = [
-        ("fwd_ms", "Linear Forward"),
-        ("bwd_ms", "Linear Backward"),
+        ("fwd_ms", "Linear 前向"),
+        ("bwd_ms", "Linear 反向"),
     ]
 
     for idx, (metric, title) in enumerate(metrics, 1):
@@ -83,9 +94,9 @@ def draw_performance_plots(results, output_dir="outputs/test/custom/linear"):
                         alpha=0.7,
                     )
 
-        ax.set_xlabel("Batch Size (B)")
-        ax.set_ylabel("Sequence Length (S)")
-        ax.set_zlabel("Time (ms)")
+        ax.set_xlabel("批大小（B）")
+        ax.set_ylabel("序列长度（S）")
+        ax.set_zlabel("耗时（毫秒）")
         ax.set_title(title)
         ax.legend(fontsize=6, loc="upper left")
 
@@ -111,8 +122,8 @@ def draw_performance_plots(results, output_dir="outputs/test/custom/linear"):
             if d_vals:
                 ax.plot(d_vals, times, marker="o", label=f"B={B}, S={S}")
 
-        ax.set_xlabel("Hidden Size (D)")
-        ax.set_ylabel("Time (ms)")
+        ax.set_xlabel("隐藏维度（D）")
+        ax.set_ylabel("耗时（毫秒）")
         ax.set_title(title)
         ax.legend(fontsize=8, bbox_to_anchor=(1.05, 1), loc="upper left")
         ax.grid(True, alpha=0.3)

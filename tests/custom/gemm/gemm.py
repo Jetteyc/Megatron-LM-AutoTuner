@@ -158,6 +158,17 @@ def draw_performance_figure(output_dir, results):
     """
     import matplotlib.pyplot as plt
 
+    plt.rcParams["font.sans-serif"] = [
+        "Noto Sans CJK SC",
+        "WenQuanYi Zen Hei",
+        "SimHei",
+        "Microsoft YaHei",
+        "PingFang SC",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
     # Group results by MKN and BMBKBN
     mkn_groups = (
         {}
@@ -191,9 +202,9 @@ def draw_performance_figure(output_dir, results):
         forward_times = [ft for _, _, _, ft, _ in data_sorted]
         ax1.plot(block_labels, forward_times, marker="o", label=f"MKN={M}", linewidth=2)
 
-    ax1.set_xlabel("Block Configuration (BM_BN_BK)")
-    ax1.set_ylabel("Time (seconds)")
-    ax1.set_title("Forward Time: MKN vs Block Configuration")
+    ax1.set_xlabel("Block 配置（BM_BN_BK）")
+    ax1.set_ylabel("耗时（秒）")
+    ax1.set_title("前向耗时：MKN 与 Block 配置关系")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     ax1.tick_params(axis="x", rotation=45)
@@ -208,9 +219,9 @@ def draw_performance_figure(output_dir, results):
             block_labels, backward_times, marker="s", label=f"MKN={M}", linewidth=2
         )
 
-    ax2.set_xlabel("Block Configuration (BM_BN_BK)")
-    ax2.set_ylabel("Time (seconds)")
-    ax2.set_title("Backward Time: MKN vs Block Configuration")
+    ax2.set_xlabel("Block 配置（BM_BN_BK）")
+    ax2.set_ylabel("耗时（秒）")
+    ax2.set_title("反向耗时：MKN 与 Block 配置关系")
     ax2.legend()
     ax2.grid(True, alpha=0.3)
     ax2.tick_params(axis="x", rotation=45)
@@ -229,9 +240,9 @@ def draw_performance_figure(output_dir, results):
             linewidth=2,
         )
 
-    ax3.set_xlabel("Matrix Size (M=K=N)")
-    ax3.set_ylabel("Time (seconds)")
-    ax3.set_title("Forward Time: Block Configuration vs Matrix Size")
+    ax3.set_xlabel("矩阵尺寸（M=K=N）")
+    ax3.set_ylabel("耗时（秒）")
+    ax3.set_title("前向耗时：Block 配置与矩阵尺寸关系")
     ax3.legend()
     ax3.grid(True, alpha=0.3)
 
@@ -249,9 +260,9 @@ def draw_performance_figure(output_dir, results):
             linewidth=2,
         )
 
-    ax4.set_xlabel("Matrix Size (M=K=N)")
-    ax4.set_ylabel("Time (seconds)")
-    ax4.set_title("Backward Time: Block Configuration vs Matrix Size")
+    ax4.set_xlabel("矩阵尺寸（M=K=N）")
+    ax4.set_ylabel("耗时（秒）")
+    ax4.set_title("反向耗时：Block 配置与矩阵尺寸关系")
     ax4.legend()
     ax4.grid(True, alpha=0.3)
 

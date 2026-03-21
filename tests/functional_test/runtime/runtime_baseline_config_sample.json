@@ -25,7 +25,8 @@
         "num_test_cases": 1,
         "max_iterations": 10,
         "warmup_iterations": 3,
-        "share_emb": null
+        "share_emb": null,
+        "use_fused_kernels": true
       },
       "paths": {
         "test_cases_dir": "tests/functional_test/runtime/generated_cases/qwen_longctx",
@@ -38,57 +39,5 @@
         "UB_SKIPMC": "1"
       }
     }
-  },
-  {
-    "model_name": "Qwen/Qwen2.5-7B",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen2.5-72B",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-0.6B",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-0.6B-Base",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-1.7B",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-1.7B-Base",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-4B",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-4B-Base",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-8B",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-8B-Base",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-14B",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen3-14B-Base",
-    "configs": {}
-  },
-  {
-    "model_name": "Qwen/Qwen1.5-MoE-A2.7B",
-    "configs": {}
   }
 ]

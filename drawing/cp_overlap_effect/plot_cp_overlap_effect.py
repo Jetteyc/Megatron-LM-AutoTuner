@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
         help="Output image path. Default: outputs/drawing/cp_overlap_effect/<timestamp>/cp_overlap_effect.png",
     )
     parser.add_argument(
-        "--title", type=str, default="CP Overlap Overhead", help="Figure title."
+        "--title", type=str, default="CP Overlap 开销", help="Figure title."
     )
     parser.add_argument(
         "--font-size",
@@ -115,7 +115,26 @@ def plot(
     font_size: float,
     dpi: int,
 ) -> None:
-    plt.rcParams.update({"font.size": font_size})
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.size": font_size,
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
     x = list(range(len(models)))
     width = 0.24
 
@@ -125,7 +144,7 @@ def plot(
         original,
         width=width,
         color="#9AA6B2",
-        label="original",
+        label="原始方案",
         alpha=0.95,
     )
     ax.bar(
@@ -133,7 +152,7 @@ def plot(
         optimized,
         width=width,
         color="#2A9D8F",
-        label="our",
+        label="优化方案",
         alpha=0.95,
     )
     ax.bar(
@@ -141,7 +160,7 @@ def plot(
         blank,
         width=width,
         color="#E9C46A",
-        label="blank",
+        label="空白对照",
         alpha=0.95,
     )
 
@@ -155,7 +174,7 @@ def plot(
 
     ax.set_xticks(x)
     ax.set_xticklabels(models, fontsize=font_size)
-    ax.set_ylabel(f"Latency ({unit})", fontsize=font_size + 1.0)
+    ax.set_ylabel(f"时延（{unit}）", fontsize=font_size + 1.0)
     ax.set_title(title, fontsize=font_size + 3.0)
     ax.grid(axis="y", linestyle="--", linewidth=0.7, alpha=0.45)
     ax.set_axisbelow(True)

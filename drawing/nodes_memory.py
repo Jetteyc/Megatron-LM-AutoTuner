@@ -25,9 +25,9 @@ except ModuleNotFoundError as exc:
 
 BYTES_PER_GIB = 1024**3
 MEMORY_METRICS = {
-    "real_detected_bytes": "Real Detected",
-    "peak_reserved_bytes": "Peak Reserved",
-    "peak_allocated_bytes": "Peak Allocated",
+    "real_detected_bytes": "实际检测值",
+    "peak_reserved_bytes": "峰值",
+    "peak_allocated_bytes": "分配峰值",
 }
 
 
@@ -200,6 +200,26 @@ def plot_stage_memory(
     dpi: int,
     font_size: float,
 ) -> None:
+    from matplotlib import font_manager
+
+    font_family = "DejaVu Sans"
+    for font_path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    ):
+        if Path(font_path).exists():
+            font_manager.fontManager.addfont(font_path)
+            font_family = font_manager.FontProperties(fname=font_path).get_name()
+            break
+
+    plt.rcParams.update(
+        {
+            "font.size": font_size,
+            "font.family": font_family,
+            "font.sans-serif": [font_family],
+            "axes.unicode_minus": False,
+        }
+    )
     stages = [f"PP{i}" for i in range(len(stage_bytes))]
     measured_gib = [
         (value / BYTES_PER_GIB) if isinstance(value, (int, float)) else 0.0
@@ -226,14 +246,14 @@ def plot_stage_memory(
         measured_gib,
         width=width,
         color=measured_colors,
-        label="original megatron",
+        label="Baseline Megatron",
     )
     synthetic_bars = ax.bar(
         [idx + width / 2 for idx in x],
         synthetic_gib,
         width=width,
         color=synthetic_colors,
-        label="megatron_enhanced",
+        label="Megatron Enhanced",
     )
 
     for bar, raw_value in zip(measured_bars, stage_bytes):
@@ -277,12 +297,12 @@ def plot_stage_memory(
 
     metric_name = MEMORY_METRICS[metric]
     ax.set_title(
-        f"Pipeline Stage Memory ({metric_name})\n"
-        f"{model_name} | {source_name} | reduce={reducer}",
+        f"流水线显存（{metric_name}）\n"
+        f"{model_name} | 聚合方式={reducer}",
         fontsize=font_size + 2,
     )
-    ax.set_xlabel("Pipeline Stage", fontsize=font_size)
-    ax.set_ylabel("Memory (GiB)", fontsize=font_size)
+    ax.set_xlabel("流水线Stage", fontsize=font_size)
+    ax.set_ylabel("显存（GiB）", fontsize=font_size)
     ax.set_xticks(x, stages, fontsize=font_size)
     ax.tick_params(axis="y", labelsize=font_size)
     ax.grid(axis="y", linestyle="--", alpha=0.3)

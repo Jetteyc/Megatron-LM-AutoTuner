@@ -388,9 +388,9 @@ def plot_ep_variance_summary(
         label="Baseline",
     )
     plt.plot(eps, global_new, marker="o", linewidth=2, label="Ours")
-    plt.xlabel("EP 大小")
+    plt.xlabel("专家并行机器数量")
     plt.ylabel("方差")
-    plt.title("不同 EP 大小下的方差对比")
+    plt.title("不同专家并行机器数量下的方差对比")
     plt.xticks(eps)
     plt.legend()
     plt.tight_layout()

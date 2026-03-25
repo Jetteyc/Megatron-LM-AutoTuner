@@ -67,12 +67,59 @@ def calculate_mfu(achieved_tflops: float, promised_tflops: float) -> float:
 def calculate_per_gpu_mfu(
     total_achieved_tflops: float,
     promised_tflops: float,
-    model_parallel_world_size: int,
+    gpu_count: int,
 ) -> float:
-    parallel_world = int(model_parallel_world_size)
-    if parallel_world <= 0:
+    total_gpus = int(gpu_count)
+    if total_gpus <= 0:
         return 0.0
-    return calculate_mfu(float(total_achieved_tflops) / float(parallel_world), promised_tflops)
+    return calculate_mfu(float(total_achieved_tflops) / float(total_gpus), promised_tflops)
+
+
+def calculate_estimated_model_flops(
+    total_achieved_tflops: float,
+    step_time_s: float,
+) -> float:
+    achieved = float(total_achieved_tflops)
+    step_time = float(step_time_s)
+    if not math.isfinite(achieved) or achieved <= 0:
+        return 0.0
+    if not math.isfinite(step_time) or step_time <= 0:
+        return 0.0
+    return achieved * step_time * 1e12
+
+
+def build_mfu_breakdown(
+    *,
+    estimated_model_flops: float,
+    step_time_s: float,
+    gpu_count: int,
+    gpu_top_flops_tflops: float,
+    total_achieved_tflops: float,
+    flops_source: str,
+    raw_estimated_tflops: float,
+    estimated_tflops_scale: float,
+) -> dict[str, float | int | str]:
+    total_gpus = max(1, int(gpu_count))
+    step_time = float(step_time_s)
+    gpu_top_flops = float(gpu_top_flops_tflops)
+    total_achieved = float(total_achieved_tflops)
+    per_gpu_achieved_tflops = (
+        total_achieved / float(total_gpus) if total_gpus > 0 else 0.0
+    )
+    mfu = calculate_mfu(per_gpu_achieved_tflops, gpu_top_flops)
+    return {
+        "formula": "estimated_model_flops / (gpu_world_size * step_time_s * 1e12) / gpu_top_flops_tflops",
+        "flops_source": flops_source,
+        "raw_estimated_tflops": float(raw_estimated_tflops),
+        "estimated_tflops_scale": float(estimated_tflops_scale),
+        "estimated_model_flops": float(estimated_model_flops),
+        "step_time_s": step_time,
+        "gpu_world_size": total_gpus,
+        "gpu_top_flops_tflops": gpu_top_flops,
+        "estimated_achieved_tflops_total": total_achieved,
+        "estimated_achieved_tflops_per_gpu": per_gpu_achieved_tflops,
+        "mfu": mfu,
+    }
 
 
 def resolve_batch_seqlens_for_flops(

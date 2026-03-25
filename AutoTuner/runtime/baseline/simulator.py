@@ -285,6 +285,110 @@ def validate_full_stage_param_fit(
         )
 
 
+def _infer_backward_times_from_observed_pp_time(
+    stage_forward_times_s: list[float],
+    observed_pp_compute_time_s: float,
+    num_microbatches: int,
+) -> list[float]:
+    if not stage_forward_times_s or num_microbatches <= 0:
+        return [0.0 for _ in stage_forward_times_s]
+
+    reference_backward_times_s = [
+        max(0.0, float(stage_time_s)) for stage_time_s in stage_forward_times_s
+    ]
+    baseline_pipeline = simulate_train_pipeline_1f1b(
+        stage_forward_times_s=stage_forward_times_s,
+        stage_backward_times_s=[0.0 for _ in stage_forward_times_s],
+        num_microbatches=num_microbatches,
+    )
+    baseline_total_time_s = baseline_pipeline["total_time_s"]
+    target_total_time_s = max(baseline_total_time_s, float(observed_pp_compute_time_s))
+    if target_total_time_s <= baseline_total_time_s:
+        return [0.0 for _ in stage_forward_times_s]
+
+    low = 0.0
+    high = 1.0
+    while True:
+        candidate_backward_times_s = [
+            stage_time_s * high for stage_time_s in reference_backward_times_s
+        ]
+        candidate_total_time_s = simulate_train_pipeline_1f1b(
+            stage_forward_times_s=stage_forward_times_s,
+            stage_backward_times_s=candidate_backward_times_s,
+            num_microbatches=num_microbatches,
+        )["total_time_s"]
+        if candidate_total_time_s >= target_total_time_s or high >= 1024.0:
+            break
+        high *= 2.0
+
+    for _ in range(48):
+        mid = (low + high) / 2.0
+        candidate_backward_times_s = [
+            stage_time_s * mid for stage_time_s in reference_backward_times_s
+        ]
+        candidate_total_time_s = simulate_train_pipeline_1f1b(
+            stage_forward_times_s=stage_forward_times_s,
+            stage_backward_times_s=candidate_backward_times_s,
+            num_microbatches=num_microbatches,
+        )["total_time_s"]
+        if candidate_total_time_s < target_total_time_s:
+            low = mid
+        else:
+            high = mid
+
+    return [stage_time_s * high for stage_time_s in reference_backward_times_s]
+
+
+def _resolve_stage_timing_stats(
+    stage_timing_stats: list[StageTimingStats],
+    observed_pp_compute_time_s: float,
+    num_microbatches: int,
+) -> tuple[list[StageTimingStats], str]:
+    runtime_stage_forward_times_s = [
+        max(0.0, float(stats.runtime_forward_time_s)) for stats in stage_timing_stats
+    ]
+    runtime_stage_backward_times_s = [
+        max(0.0, float(stats.runtime_backward_time_s)) for stats in stage_timing_stats
+    ]
+    raw_pipeline = simulate_train_pipeline_1f1b(
+        stage_forward_times_s=runtime_stage_forward_times_s,
+        stage_backward_times_s=runtime_stage_backward_times_s,
+        num_microbatches=num_microbatches,
+    )
+    raw_forward_total_time_s = sum(runtime_stage_forward_times_s)
+    raw_backward_total_time_s = sum(runtime_stage_backward_times_s)
+    if raw_backward_total_time_s > max(1e-6, raw_forward_total_time_s * 0.05):
+        return stage_timing_stats, "measured"
+    if observed_pp_compute_time_s <= raw_pipeline["total_time_s"] * 1.05:
+        return stage_timing_stats, "measured"
+
+    inferred_backward_times_s = _infer_backward_times_from_observed_pp_time(
+        stage_forward_times_s=runtime_stage_forward_times_s,
+        observed_pp_compute_time_s=observed_pp_compute_time_s,
+        num_microbatches=num_microbatches,
+    )
+    resolved_stage_timing_stats: list[StageTimingStats] = []
+    for stats, inferred_backward_time_s in zip(
+        stage_timing_stats, inferred_backward_times_s
+    ):
+        stage_num_microbatches = max(0, int(stats.num_microbatches))
+        inferred_backward_total_time_s = (
+            inferred_backward_time_s * float(stage_num_microbatches)
+        )
+        resolved_stage_timing_stats.append(
+            StageTimingStats(
+                pp_rank=stats.pp_rank,
+                runtime_layer_count=stats.runtime_layer_count,
+                runtime_forward_time_s=stats.runtime_forward_time_s,
+                runtime_backward_time_s=inferred_backward_time_s,
+                runtime_forward_total_time_s=stats.runtime_forward_total_time_s,
+                runtime_backward_total_time_s=inferred_backward_total_time_s,
+                num_microbatches=stats.num_microbatches,
+            )
+        )
+    return resolved_stage_timing_stats, "inferred_from_observed_pp_compute_time"
+
+
 def simulate_full_iteration(
     observed_iteration_time_s: float,
     num_microbatches: int,
@@ -341,11 +445,17 @@ def simulate_full_iteration(
             0.0, observed_pp_compute_time_s - runtime_dp_allreduce_time_s
         )
 
+    resolved_stage_timing_stats, stage_timing_source = _resolve_stage_timing_stats(
+        stage_timing_stats=stage_timing_stats,
+        observed_pp_compute_time_s=observed_pp_compute_time_s,
+        num_microbatches=num_microbatches,
+    )
+
     runtime_stage_forward_times_s = [
-        stats.runtime_forward_time_s for stats in stage_timing_stats
+        stats.runtime_forward_time_s for stats in resolved_stage_timing_stats
     ]
     runtime_stage_backward_times_s = [
-        stats.runtime_backward_time_s for stats in stage_timing_stats
+        stats.runtime_backward_time_s for stats in resolved_stage_timing_stats
     ]
     stage_layer_scales: list[float] = []
     full_stage_forward_times_s: list[float] = []
@@ -400,6 +510,7 @@ def simulate_full_iteration(
         "stage_layer_scales": stage_layer_scales,
         "runtime_stage_forward_times_s": runtime_stage_forward_times_s,
         "runtime_stage_backward_times_s": runtime_stage_backward_times_s,
+        "runtime_stage_timing_source": stage_timing_source,
         "full_stage_forward_times_s": full_stage_forward_times_s,
         "full_stage_backward_times_s": full_stage_backward_times_s,
         "runtime_pp_schedule_time_s": runtime_pp_schedule_time_s,
@@ -412,5 +523,5 @@ def simulate_full_iteration(
         "dp_allreduce_bandwidth_gbps": bandwidth_gbps,
         "dp_allreduce_latency_s": latency_s,
         "stage_param_stats": [asdict(stats) for stats in stage_param_stats],
-        "stage_timing_stats": [asdict(stats) for stats in stage_timing_stats],
+        "stage_timing_stats": [asdict(stats) for stats in resolved_stage_timing_stats],
     }

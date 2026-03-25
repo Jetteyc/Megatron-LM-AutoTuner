@@ -90,6 +90,57 @@ def test_simulate_full_iteration_adds_dp_allreduce_bottleneck():
     assert result["simulated_time_s"] == 9.0
 
 
+def test_simulate_full_iteration_infers_backward_when_measured_backward_is_negligible():
+    result = simulate_full_iteration(
+        observed_iteration_time_s=3.0,
+        num_microbatches=1,
+        full_stage_layer_counts=[1],
+        runtime_stage_layer_counts=[1],
+        stage_param_stats=[
+            StageParamStats(0, 1, 100, 100, 1_000),
+        ],
+        stage_timing_stats=[
+            StageTimingStats(0, 1, 1.0, 1e-6, 1.0, 1e-6, 1),
+        ],
+        dp_world_size=1,
+        include_runtime_dp_in_observed_time=False,
+        bandwidth_gbps=1.0,
+        latency_s=0.0,
+    )
+
+    assert result["runtime_stage_timing_source"] == "inferred_from_observed_pp_compute_time"
+    assert result["runtime_stage_forward_times_s"] == [1.0]
+    assert result["runtime_stage_backward_times_s"][0] == pytest.approx(2.0)
+    assert result["stage_timing_stats"][0]["runtime_backward_time_s"] == pytest.approx(
+        2.0
+    )
+    assert result["simulated_pp_compute_time_s"] == pytest.approx(3.0)
+
+
+def test_simulate_full_iteration_keeps_measured_backward_when_it_is_plausible():
+    result = simulate_full_iteration(
+        observed_iteration_time_s=3.0,
+        num_microbatches=1,
+        full_stage_layer_counts=[1],
+        runtime_stage_layer_counts=[1],
+        stage_param_stats=[
+            StageParamStats(0, 1, 100, 100, 1_000),
+        ],
+        stage_timing_stats=[
+            StageTimingStats(0, 1, 1.0, 2.0, 1.0, 2.0, 1),
+        ],
+        dp_world_size=1,
+        include_runtime_dp_in_observed_time=False,
+        bandwidth_gbps=1.0,
+        latency_s=0.0,
+    )
+
+    assert result["runtime_stage_timing_source"] == "measured"
+    assert result["runtime_stage_backward_times_s"] == [2.0]
+    assert result["stage_timing_stats"][0]["runtime_backward_time_s"] == 2.0
+    assert result["simulated_pp_compute_time_s"] == 3.0
+
+
 def test_simulate_full_iteration_errors_when_full_stage_params_do_not_fit():
     with pytest.raises(RuntimeSimulationOOMError) as exc_info:
         simulate_full_iteration(

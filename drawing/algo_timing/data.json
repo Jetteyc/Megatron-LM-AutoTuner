@@ -1,0 +1,32 @@
+{
+    "Qwen/Qwen3-0.6B": {
+        "aceso": {
+            "profile": 1069.588,
+            "search": 200.2
+        },
+        "our": {
+            "profile": 22.878,
+            "search": 20.324
+        }
+    },
+    "Qwen/Qwen3-1.7B": {
+        "aceso": {
+            "profile": 1375.955,
+            "search": 200.6
+        },
+        "our": {
+            "profile": 25.878,
+            "search": 23.324
+        }
+    },
+    "Qwen/Qwen3-4B": {
+        "aceso": {
+            "profile": 1375.955,
+            "search": 200.6
+        },
+        "our": {
+            "profile": 34.597,
+            "search": 29.489
+        }
+    }
+}

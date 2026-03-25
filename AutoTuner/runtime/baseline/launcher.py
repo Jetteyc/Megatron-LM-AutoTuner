@@ -22,7 +22,8 @@ from AutoTuner.runtime.baseline.simulator import (
     simulate_full_iteration,
 )
 from AutoTuner.runtime.baseline.perf_metrics import (
-    calculate_mfu,
+    build_mfu_breakdown,
+    calculate_estimated_model_flops,
     calculate_per_gpu_mfu,
     normalize_promised_tflops,
 )
@@ -842,7 +843,11 @@ class RuntimeLauncher:
 
         return forward_step
 
-    def _collect_batch_seqlens(
+    def _collect_batch_seqlens(self, test_case: InputTestCase) -> list[int]:
+        total_sequences = max(0, int(test_case.batch_size))
+        return [int(test_case.seqlen)] * total_sequences
+
+    def _collect_runtime_batch_seqlens(
         self, test_case: InputTestCase, num_microbatches: int
     ) -> list[int]:
         total_sequences = max(0, int(num_microbatches)) * max(
@@ -852,35 +857,45 @@ class RuntimeLauncher:
 
     def _compute_perf_metrics(
         self,
-        batch_seqlens: list[int],
+        global_batch_seqlens: list[int],
+        runtime_batch_seqlens: list[int],
         delta_time: float,
         world_size: int,
         *,
         estimated_flops_scale: float,
         fallback_num_hidden_layers: int,
     ) -> dict:
-        total_tokens = sum(batch_seqlens)
-        total_sequences = len(batch_seqlens)
+        total_tokens = sum(global_batch_seqlens)
+        total_sequences = len(global_batch_seqlens)
+        runtime_total_tokens = sum(runtime_batch_seqlens)
+        runtime_total_sequences = len(runtime_batch_seqlens)
         throughput_tokens_s = (
-            total_tokens / delta_time if delta_time > 0 else float("inf")
+            runtime_total_tokens / delta_time if delta_time > 0 else float("inf")
         )
         throughput_tokens_s_per_gpu = throughput_tokens_s / world_size
         throughput_seqs_s = (
-            total_sequences / delta_time if delta_time > 0 else float("inf")
+            runtime_total_sequences / delta_time if delta_time > 0 else float("inf")
         )
         throughput_seqs_s_per_gpu = throughput_seqs_s / world_size
 
-        estimated_flops, promised_flops = self.flops_counter.estimate_flops(
-            batch_seqlens, delta_time
+        raw_estimated_tflops, promised_flops = self.flops_counter.estimate_flops(
+            global_batch_seqlens, delta_time
         )
+        flops_source = "verl"
+        estimated_flops = raw_estimated_tflops
         if estimated_flops == 0.0:
+            flops_source = "generic_fallback"
             estimated_flops = self._estimate_generic_flops(
-                batch_seqlens,
+                global_batch_seqlens,
                 delta_time,
                 num_hidden_layers=fallback_num_hidden_layers,
             )
         else:
             estimated_flops *= estimated_flops_scale
+        estimated_model_flops = calculate_estimated_model_flops(
+            total_achieved_tflops=estimated_flops,
+            step_time_s=delta_time,
+        )
         normalized_promised_flops = normalize_promised_tflops(promised_flops)
         if normalized_promised_flops != promised_flops:
             if normalized_promised_flops > 0 and not self._promised_tflops_fallback_logged:
@@ -900,26 +915,45 @@ class RuntimeLauncher:
                     level=logging.WARNING,
                 )
                 self._promised_tflops_unresolved_logged = True
-        dp_world_size = max(1, mpu.get_data_parallel_world_size())
-        model_parallel_world_size = max(1, world_size // dp_world_size)
         mfu = calculate_per_gpu_mfu(
             estimated_flops,
             normalized_promised_flops,
-            model_parallel_world_size,
+            world_size,
+        )
+        mfu_breakdown = build_mfu_breakdown(
+            estimated_model_flops=estimated_model_flops,
+            step_time_s=delta_time,
+            gpu_count=world_size,
+            gpu_top_flops_tflops=normalized_promised_flops,
+            total_achieved_tflops=estimated_flops,
+            flops_source=flops_source,
+            raw_estimated_tflops=raw_estimated_tflops,
+            estimated_tflops_scale=estimated_flops_scale,
         )
 
         return {
             "total_tokens": total_tokens,
             "total_sequences": total_sequences,
+            "runtime_total_tokens": runtime_total_tokens,
+            "runtime_total_sequences": runtime_total_sequences,
             "time_s": delta_time,
             "throughput_tokens_s": throughput_tokens_s,
             "throughput_tokens_s_per_gpu": throughput_tokens_s_per_gpu,
             "throughput_sequences_s": throughput_seqs_s,
             "throughput_sequences_s_per_gpu": throughput_seqs_s_per_gpu,
+            "throughput_scope": "runtime_local_batch",
             "mfu": mfu,
             "estimated_tflops": estimated_flops,
+            "raw_estimated_tflops": raw_estimated_tflops,
+            "estimated_tflops_scale": estimated_flops_scale,
+            "estimated_model_flops": estimated_model_flops,
+            "flops_source": flops_source,
             "promised_tflops": normalized_promised_flops,
-            "model_parallel_world_size": model_parallel_world_size,
+            "model_parallel_world_size": max(
+                1, world_size // max(1, mpu.get_data_parallel_world_size())
+            ),
+            "gpu_world_size": world_size,
+            "mfu_breakdown": mfu_breakdown,
         }
 
     def _estimate_generic_flops(
@@ -1091,11 +1125,14 @@ class RuntimeLauncher:
                 "iterations": [],
             }
 
-            batch_seqlens = self._collect_batch_seqlens(test_case, num_microbatches)
-            if batch_seqlens:
-                min_seqlen = min(batch_seqlens)
-                max_seqlen = max(batch_seqlens)
-                avg_seqlen = sum(batch_seqlens) / len(batch_seqlens)
+            batch_seqlens = self._collect_batch_seqlens(test_case)
+            runtime_batch_seqlens = self._collect_runtime_batch_seqlens(
+                test_case, num_microbatches
+            )
+            if runtime_batch_seqlens:
+                min_seqlen = min(runtime_batch_seqlens)
+                max_seqlen = max(runtime_batch_seqlens)
+                avg_seqlen = sum(runtime_batch_seqlens) / len(runtime_batch_seqlens)
             else:
                 min_seqlen = max_seqlen = avg_seqlen = 0
             self._log(
@@ -1158,6 +1195,7 @@ class RuntimeLauncher:
 
                 metrics = self._compute_perf_metrics(
                     batch_seqlens,
+                    runtime_batch_seqlens,
                     delta_time,
                     world_size,
                     estimated_flops_scale=self.flops_layer_scale,
@@ -1183,6 +1221,7 @@ class RuntimeLauncher:
                 )
                 simulated_perf_metrics = self._compute_perf_metrics(
                     batch_seqlens,
+                    runtime_batch_seqlens,
                     simulation["simulated_time_s"],
                     world_size,
                     estimated_flops_scale=1.0,
@@ -1211,6 +1250,24 @@ class RuntimeLauncher:
                     simulated_perf_metrics["throughput_sequences_s_per_gpu"]
                 )
                 metrics["simulated_mfu"] = simulated_perf_metrics["mfu"]
+                metrics["simulated_estimated_tflops"] = simulated_perf_metrics[
+                    "estimated_tflops"
+                ]
+                metrics["simulated_raw_estimated_tflops"] = simulated_perf_metrics[
+                    "raw_estimated_tflops"
+                ]
+                metrics["simulated_estimated_tflops_scale"] = (
+                    simulated_perf_metrics["estimated_tflops_scale"]
+                )
+                metrics["simulated_estimated_model_flops"] = (
+                    simulated_perf_metrics["estimated_model_flops"]
+                )
+                metrics["simulated_flops_source"] = simulated_perf_metrics[
+                    "flops_source"
+                ]
+                metrics["simulated_mfu_breakdown"] = simulated_perf_metrics[
+                    "mfu_breakdown"
+                ]
                 iteration_metrics.append(metrics)
                 test_case_report["iterations"].append(metrics)
                 max_peak_allocated = max(
@@ -1260,35 +1317,100 @@ class RuntimeLauncher:
             def _avg(key: str) -> float:
                 return sum(m[key] for m in valid_metrics) / len(valid_metrics)
 
+            summary_time_s = _avg("time_s")
+            summary_simulated_time_s = _avg("simulated_time_s")
+            summary_perf_metrics = self._compute_perf_metrics(
+                batch_seqlens,
+                runtime_batch_seqlens,
+                summary_time_s,
+                world_size,
+                estimated_flops_scale=self.flops_layer_scale,
+                fallback_num_hidden_layers=self.runtime_total_layers,
+            )
+            summary_simulated_perf_metrics = self._compute_perf_metrics(
+                batch_seqlens,
+                runtime_batch_seqlens,
+                summary_simulated_time_s,
+                world_size,
+                estimated_flops_scale=1.0,
+                fallback_num_hidden_layers=self.original_total_layers,
+            )
             summary = {
                 "test_case_idx": idx,
                 "num_microbatches": num_microbatches,
                 "max_iterations": max_iterations,
                 "warmup_iterations": warmup_count,
-                "total_tokens": iteration_metrics[-1]["total_tokens"],
-                "total_sequences": iteration_metrics[-1]["total_sequences"],
-                "time_s": _avg("time_s"),
-                "throughput_tokens_s": _avg("throughput_tokens_s"),
-                "throughput_tokens_s_per_gpu": _avg("throughput_tokens_s_per_gpu"),
-                "throughput_sequences_s": _avg("throughput_sequences_s"),
-                "throughput_sequences_s_per_gpu": _avg(
+                "total_tokens": summary_perf_metrics["total_tokens"],
+                "total_sequences": summary_perf_metrics["total_sequences"],
+                "runtime_total_tokens": summary_perf_metrics["runtime_total_tokens"],
+                "runtime_total_sequences": summary_perf_metrics[
+                    "runtime_total_sequences"
+                ],
+                "time_s": summary_time_s,
+                "throughput_tokens_s": summary_perf_metrics["throughput_tokens_s"],
+                "throughput_tokens_s_per_gpu": summary_perf_metrics[
+                    "throughput_tokens_s_per_gpu"
+                ],
+                "throughput_sequences_s": summary_perf_metrics[
+                    "throughput_sequences_s"
+                ],
+                "throughput_sequences_s_per_gpu": summary_perf_metrics[
                     "throughput_sequences_s_per_gpu"
-                ),
-                "mfu": _avg("mfu"),
-                "simulated_time_s": _avg("simulated_time_s"),
+                ],
+                "throughput_scope": summary_perf_metrics["throughput_scope"],
+                "mfu": summary_perf_metrics["mfu"],
+                "estimated_tflops": summary_perf_metrics["estimated_tflops"],
+                "raw_estimated_tflops": summary_perf_metrics["raw_estimated_tflops"],
+                "estimated_tflops_scale": summary_perf_metrics[
+                    "estimated_tflops_scale"
+                ],
+                "estimated_model_flops": summary_perf_metrics[
+                    "estimated_model_flops"
+                ],
+                "flops_source": summary_perf_metrics["flops_source"],
+                "promised_tflops": summary_perf_metrics["promised_tflops"],
+                "model_parallel_world_size": summary_perf_metrics[
+                    "model_parallel_world_size"
+                ],
+                "gpu_world_size": summary_perf_metrics["gpu_world_size"],
+                "mfu_breakdown": summary_perf_metrics["mfu_breakdown"],
+                "simulated_time_s": summary_simulated_time_s,
                 "simulated_pp_compute_time_s": _avg("simulated_pp_compute_time_s"),
                 "simulated_dp_allreduce_time_s": _avg("simulated_dp_allreduce_time_s"),
-                "simulated_throughput_tokens_s": _avg("simulated_throughput_tokens_s"),
-                "simulated_throughput_tokens_s_per_gpu": _avg(
-                    "simulated_throughput_tokens_s_per_gpu"
-                ),
-                "simulated_throughput_sequences_s": _avg(
-                    "simulated_throughput_sequences_s"
-                ),
-                "simulated_throughput_sequences_s_per_gpu": _avg(
-                    "simulated_throughput_sequences_s_per_gpu"
-                ),
-                "simulated_mfu": _avg("simulated_mfu"),
+                "simulated_throughput_tokens_s": summary_simulated_perf_metrics[
+                    "throughput_tokens_s"
+                ],
+                "simulated_throughput_tokens_s_per_gpu": summary_simulated_perf_metrics[
+                    "throughput_tokens_s_per_gpu"
+                ],
+                "simulated_throughput_sequences_s": summary_simulated_perf_metrics[
+                    "throughput_sequences_s"
+                ],
+                "simulated_throughput_sequences_s_per_gpu": summary_simulated_perf_metrics[
+                    "throughput_sequences_s_per_gpu"
+                ],
+                "simulated_throughput_scope": summary_simulated_perf_metrics[
+                    "throughput_scope"
+                ],
+                "simulated_mfu": summary_simulated_perf_metrics["mfu"],
+                "simulated_estimated_tflops": summary_simulated_perf_metrics[
+                    "estimated_tflops"
+                ],
+                "simulated_raw_estimated_tflops": summary_simulated_perf_metrics[
+                    "raw_estimated_tflops"
+                ],
+                "simulated_estimated_tflops_scale": summary_simulated_perf_metrics[
+                    "estimated_tflops_scale"
+                ],
+                "simulated_estimated_model_flops": summary_simulated_perf_metrics[
+                    "estimated_model_flops"
+                ],
+                "simulated_flops_source": summary_simulated_perf_metrics[
+                    "flops_source"
+                ],
+                "simulated_mfu_breakdown": summary_simulated_perf_metrics[
+                    "mfu_breakdown"
+                ],
                 "simulation": valid_metrics[-1]["simulation"],
                 "memory_by_rank": self._summarize_rank_memory(valid_metrics),
             }

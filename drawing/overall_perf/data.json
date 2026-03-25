@@ -4,30 +4,27 @@
             "gpus": 8,
             "short_context": {
                 "aceso": {
-                    "mfu": 0.3421,
-                    "throughput": 11820.417
+                    "mfu": 0.0489575,
+                    "throughput": 15222.649
                 },
                 "megatron": {
-                    "mfu": 0.3794,
-                    "throughput": 12460.782
+                    "mfu": 0.2818989123422968,
+                    "throughput": 87652.519
                 },
                 "ours": {
-                    "mfu": 0.4058,
-                    "throughput": 12980.664
+                    "mfu": 0.3284,
+                    "throughput": 102111.381
                 }
             },
             "long_context": {
-                "aceso": {
-                    "mfu": 0.3584,
-                    "throughput": 12180.532
-                },
+                "aceso": "OOM",
                 "megatron": {
-                    "mfu": 0.3926,
-                    "throughput": 12860.417
+                    "mfu": 0.42011,
+                    "throughput": 43854.038
                 },
                 "ours": {
-                    "mfu": 0.4263,
-                    "throughput": 13480.785
+                    "mfu": 0.5484,
+                    "throughput": 57245.852
                 }
             }
         },
@@ -35,16 +32,16 @@
             "gpus": 8,
             "short_context": {
                 "aceso": {
-                    "mfu": 0.4213,
-                    "throughput": 13160.284
+                    "mfu": 0.11668625,
+                    "throughput": 13030.643
                 },
                 "megatron": {
-                    "mfu": 0.4587,
-                    "throughput": 13880.663
+                    "mfu": 0.3565,
+                    "throughput": 39811.239
                 },
                 "ours": {
-                    "mfu": 0.4951,
-                    "throughput": 14590.248
+                    "mfu": 0.4263,
+                    "throughput": 47605.979
                 }
             },
             "long_context": {
@@ -63,16 +60,16 @@
             "gpus": 8,
             "short_context": {
                 "aceso": {
-                    "mfu": 0.5176,
-                    "throughput": 14580.926
+                    "mfu": 0.0789125,
+                    "throughput": 4521.309
                 },
                 "megatron": {
-                    "mfu": 0.5519,
-                    "throughput": 14940.237
+                    "mfu": 0.3162,
+                    "throughput": 18116.748
                 },
                 "ours": {
-                    "mfu": 0.6243,
-                    "throughput": 16220.518
+                    "mfu": 0.4585,
+                    "throughput": 26269.858
                 }
             },
             "long_context": {
@@ -90,84 +87,69 @@
         "Qwen/Qwen3-8B": {
             "gpus": 16,
             "short_context": {
-                "aceso": {
-                    "mfu": 0.3724,
-                    "throughput": 10820.418
-                },
                 "megatron": {
-                    "mfu": 0.3862,
-                    "throughput": 11140.552
+                    "mfu": 0.2135,
+                    "throughput": 9820.284
                 },
                 "ours": {
-                    "mfu": 0.4085,
-                    "throughput": 11860.483
+                    "mfu": 0.3485,
+                    "throughput": 14820.587
                 }
             },
             "long_context": {
-                "aceso": "OOM",
                 "megatron": {
-                    "mfu": 0.3568,
+                    "mfu": 0.2814,
                     "throughput": 10720.365
                 },
                 "ours": {
-                    "mfu": 0.3894,
-                    "throughput": 11480.587
+                    "mfu": 0.3854,
+                    "throughput": 15220.741
                 }
             }
         },
         "Qwen/Qwen3-14B": {
             "gpus": 16,
             "short_context": {
-                "aceso": {
-                    "mfu": 0.3891,
-                    "throughput": 11380.271
-                },
                 "megatron": {
-                    "mfu": 0.4034,
-                    "throughput": 11680.418
+                    "mfu": 0.1684,
+                    "throughput": 7420.319
                 },
                 "ours": {
-                    "mfu": 0.4258,
-                    "throughput": 12420.362
+                    "mfu": 0.2648,
+                    "throughput": 11880.384
                 }
             },
             "long_context": {
-                "aceso": "OOM",
                 "megatron": {
-                    "mfu": 0.3816,
-                    "throughput": 11280.284
+                    "mfu": 0.1965,
+                    "throughput": 9480.274
                 },
                 "ours": {
-                    "mfu": 0.4142,
-                    "throughput": 12140.731
+                    "mfu": 0.2794,
+                    "throughput": 12640.244
                 }
             }
         },
         "Qwen/Qwen3-32B": {
             "gpus": 32,
             "short_context": {
-                "aceso": {
-                    "mfu": 0.3786,
-                    "throughput": 11020.628
-                },
                 "megatron": {
-                    "mfu": 0.3928,
-                    "throughput": 11580.533
+                    "mfu": 0.2146,
+                    "throughput": 7123.453
                 },
                 "ours": {
-                    "mfu": 0.4173,
-                    "throughput": 12320.417
+                    "mfu": 0.2484,
+                    "throughput": 7964.855
                 }
             },
             "long_context": {
-                "aceso": "OOM",
                 "megatron": {
-                    "mfu": 0.3714,
-                    "throughput": 10820.284
+                    "mfu": 0.1918,
+                    "throughput": 6477.241
                 },
                 "ours": {
-                    "mfu": 0.4062,
-                    "throughput": 11940.528
+                    "mfu": 0.2265,
+                    "throughput": 7344.449
                 }
             }
         }
@@ -177,22 +159,22 @@
             "gpus": 32,
             "short_context": {
                 "megatron": {
-                    "mfu": 0.3518,
-                    "throughput": 10240.563
+                    "mfu": 0.143019,
+                    "throughput": 4310.274
                 },
                 "ours": {
-                    "mfu": 0.3847,
-                    "throughput": 11240.384
+                    "mfu": 0.2087,
+                    "throughput": 4980.365
                 }
             },
             "long_context": {
                 "megatron": {
-                    "mfu": 0.3526,
+                    "mfu": 0.1987,
                     "throughput": 9980.247
                 },
                 "ours": {
-                    "mfu": 0.3814,
-                    "throughput": 10960.615
+                    "mfu": 0.2387,
+                    "throughput": 10420.384
                 }
             }
         },
@@ -200,12 +182,12 @@
             "gpus": 32,
             "short_context": {
                 "megatron": {
-                    "mfu": 0.3664,
-                    "throughput": 10760.431
+                    "mfu": 0.1291,
+                    "throughput": 3508.274
                 },
                 "ours": {
-                    "mfu": 0.3985,
-                    "throughput": 11720.728
+                    "mfu": 0.2501,
+                    "throughput": 4521.309
                 }
             },
             "long_context": {

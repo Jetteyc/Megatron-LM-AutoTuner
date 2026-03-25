@@ -189,3 +189,40 @@ python drawing/breakdown/plot_breakdown.py \
   -o outputs/drawing/breakdown/custom/breakdown.png \
   --font-size 15
 ```
+
+## `algo_timing/plot_algo_timing.py`
+
+Draw stacked search/profile timing bars from `drawing/algo_timing/data.json`:
+- two bars per model: `Aceso` and `Ours`
+- stacked segments: `search` and `profile`
+- per-bar total-time annotation
+- per-model total speedup annotation (for example `22.5x faster`)
+
+### Run
+
+```bash
+python drawing/algo_timing/plot_algo_timing.py
+```
+
+### Output
+
+- Default output image path:
+  - `outputs/drawing/algo_timing/<timestamp>/algo_timing.png`
+- You can override it with `-o /path/to/output.png`
+
+### Common Options
+
+- `-i`, `--input`: input JSON path (default `drawing/algo_timing/data.json`)
+- `-o`, `--output`: output image path
+- `--title`: figure title (default `Search and Profile Time`)
+- `--font-size`: base font size (default `14`)
+- `--dpi`: image dpi (default `180`)
+
+### Example With Custom Output
+
+```bash
+python drawing/algo_timing/plot_algo_timing.py \
+  -i drawing/algo_timing/data.json \
+  -o outputs/drawing/algo_timing/custom/algo_timing.png \
+  --font-size 15
+```

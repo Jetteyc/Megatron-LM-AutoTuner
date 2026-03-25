@@ -1,0 +1,70 @@
+{
+    "Qwen/Qwen3-0.6B": {
+        "config": [
+            {
+                "simulator": {
+                    "throughput": 28194.6374,
+                    "MFU": 0.482
+                },
+                "real": {
+                    "throughput": 27346.2815,
+                    "MFU": 0.4714
+                }
+            },
+            {
+                "simulator": {
+                    "throughput": 16842.9156,
+                    "MFU": 0.291
+                },
+                "real": {
+                    "throughput": 17496.7328,
+                    "MFU": 0.3018
+                }
+            },
+            {
+                "simulator": {
+                    "throughput": 5984.2748,
+                    "MFU": 0.097
+                },
+                "real": {
+                    "throughput": 5406.9182,
+                    "MFU": 0.0877
+                }
+            }
+        ]
+    },
+    "Qwen/Qwen3-1.7B": {
+        "config": [
+            {
+                "simulator": {
+                    "throughput": 23156.8047,
+                    "MFU": 0.416
+                },
+                "real": {
+                    "throughput": 24122.3379,
+                    "MFU": 0.4272
+                }
+            },
+            {
+                "simulator": {
+                    "throughput": 12784.5639,
+                    "MFU": 0.214
+                },
+                "real": {
+                    "throughput": 11986.4412,
+                    "MFU": 0.2036
+                }
+            },
+            {
+                "simulator": {
+                    "throughput": 4462.3185,
+                    "MFU": 0.061
+                },
+                "real": {
+                    "throughput": 5038.9057,
+                    "MFU": 0.0705
+                }
+            }
+        ]
+    }
+}

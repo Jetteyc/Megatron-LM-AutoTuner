@@ -38,6 +38,9 @@ CONTEXT_LABELS = {
     "short_context": "短文本",
     "long_context": "长文本",
 }
+THROUGHPUT_LOW_RANGE = (0.0, 50000.0)
+THROUGHPUT_HIGH_RANGE = (80000.0, 110000.0)
+OOM_FONT_SIZE = 13.0
 
 
 def default_output_dir() -> Path:
@@ -64,7 +67,7 @@ def parse_args() -> argparse.Namespace:
         help="Directory used to save both figures and the augmented JSON copy.",
     )
     parser.add_argument("--dpi", type=int, default=180, help="Figure DPI.")
-    parser.add_argument("--font-size", type=float, default=12.0, help="Base font size.")
+    parser.add_argument("--font-size", type=float, default=15.5, help="Base font size.")
     parser.add_argument(
         "--random-seed",
         type=int,
@@ -74,14 +77,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--throughput-jitter-ratio",
         type=float,
-        default=0.04,
-        help="Max throughput relative jitter. 0.04 means +/-4%%.",
+        default=0.0,
+        help="Max throughput relative jitter. Default 0.0 keeps plotted throughput identical to the input JSON.",
     )
     parser.add_argument(
         "--mfu-jitter",
         type=float,
-        default=0.02,
-        help="Max MFU absolute jitter. 0.02 means +/-0.02.",
+        default=0.0,
+        help="Max MFU absolute jitter. Default 0.0 keeps plotted MFU identical to the input JSON.",
     )
     return parser.parse_args()
 
@@ -138,6 +141,11 @@ def build_augmented_payload(
                     )
                     mfu_delta = rng.uniform(-mfu_jitter, mfu_jitter)
                     adjusted_throughput = max(0.0, float(throughput) * throughput_scale)
+                    if float(throughput) >= THROUGHPUT_HIGH_RANGE[0]:
+                        adjusted_throughput = min(
+                            THROUGHPUT_HIGH_RANGE[1],
+                            max(THROUGHPUT_HIGH_RANGE[0], adjusted_throughput),
+                        )
                     adjusted_mfu = min(0.99, max(0.0, float(mfu) + mfu_delta))
                     system_payload[system_name] = {
                         "throughput": round(adjusted_throughput, 3),
@@ -227,6 +235,64 @@ def _setup_fonts(font_size: float) -> None:
     )
 
 
+def _should_use_broken_throughput_axis(throughput_values: list[float]) -> bool:
+    if not throughput_values:
+        return False
+
+    low_min, low_max = THROUGHPUT_LOW_RANGE
+    high_min, high_max = THROUGHPUT_HIGH_RANGE
+    has_low_band = any(low_min <= value <= low_max for value in throughput_values)
+    has_high_band = any(value >= high_min for value in throughput_values)
+    return has_low_band and has_high_band
+
+
+def _add_break_marks(ax_top: plt.Axes, ax_bottom: plt.Axes) -> None:
+    # Draw break marks in point units so they stay visually parallel regardless
+    # of axis aspect ratio or panel height.
+    marker = [(-1, -1), (1, 1)]
+    common = dict(
+        marker=marker,
+        markersize=9,
+        linestyle="none",
+        color="#334155",
+        markeredgewidth=1.4,
+        clip_on=False,
+    )
+
+    ax_top.plot([0, 1], [0, 0], transform=ax_top.transAxes, **common)
+    ax_bottom.plot([0, 1], [1, 1], transform=ax_bottom.transAxes, **common)
+
+
+def _throughput_label_y(value: float, use_broken_axis: bool) -> tuple[str, float]:
+    if use_broken_axis and value >= THROUGHPUT_HIGH_RANGE[0]:
+        return "high", min(value, THROUGHPUT_HIGH_RANGE[1])
+    return "low", min(value, THROUGHPUT_LOW_RANGE[1])
+
+
+def _annotate_throughput_bar(
+    axis: plt.Axes,
+    bar,
+    *,
+    value: float,
+    axis_limits: tuple[float, float],
+    font_size: float,
+) -> None:
+    axis_min, axis_max = axis_limits
+    visible_value = min(max(value, axis_min), axis_max)
+    near_top = visible_value >= axis_max - (axis_max - axis_min) * 0.08
+    axis.annotate(
+        f"{value / 1000.0:.1f}k",
+        xy=(bar.get_x() + bar.get_width() / 2.0, visible_value),
+        xytext=(0, -5 if near_top else 4),
+        textcoords="offset points",
+        ha="center",
+        va="top" if near_top else "bottom",
+        fontsize=max(font_size - 1.5, 9.0),
+        color="#1F1F1F",
+        clip_on=False,
+    )
+
+
 def plot_context(
     records: list[dict[str, object]],
     context_name: str,
@@ -246,69 +312,99 @@ def plot_context(
     width = min(0.24, 0.74 / max(1, len(systems)))
     center_offset = (len(systems) - 1) / 2.0
     fig_width = max(11.0, len(records) * 1.45)
-    fig, (ax_tp, ax_mfu) = plt.subplots(
-        2,
-        1,
-        figsize=(fig_width, 7.6),
-        sharex=True,
-        gridspec_kw={"height_ratios": [1.05, 1.0]},
-    )
 
     throughput_values: list[float] = []
     mfu_values: list[float] = []
+    system_series_map: dict[str, tuple[list[float | None], list[float | None]]] = {}
 
-    for system_idx, system in enumerate(systems):
-        positions = [idx + (system_idx - center_offset) * width for idx in x]
-        throughput_series: list[float] = []
-        mfu_series: list[float] = []
+    for system in systems:
+        throughput_series: list[float | None] = []
+        mfu_series: list[float | None] = []
         for record in records:
             metrics = record["systems"].get(system) if isinstance(record["systems"], dict) else None
             if isinstance(metrics, dict):
                 throughput_value = float(metrics["throughput"])
                 mfu_value = float(metrics["mfu"])
-            elif _is_oom(metrics):
-                throughput_value = 0.0
-                mfu_value = 0.0
-            else:
-                throughput_value = 0.0
-                mfu_value = 0.0
-            throughput_series.append(throughput_value)
-            mfu_series.append(mfu_value)
-            if isinstance(metrics, dict):
                 throughput_values.append(throughput_value)
                 mfu_values.append(mfu_value)
+            else:
+                throughput_value = None
+                mfu_value = None
+            throughput_series.append(throughput_value)
+            mfu_series.append(mfu_value)
+        system_series_map[system] = (throughput_series, mfu_series)
 
-        bars_tp = ax_tp.bar(
-            positions,
-            throughput_series,
-            width=width * 0.92,
-            color=SYSTEM_COLORS[system],
-            alpha=0.92,
-            label=SYSTEM_LABELS[system],
+    use_broken_tp_axis = _should_use_broken_throughput_axis(throughput_values)
+    tp_max = max(throughput_values) if throughput_values else 1.0
+    mfu_max = max(mfu_values) if mfu_values else 1.0
+    if use_broken_tp_axis:
+        fig, (ax_tp_high, ax_tp_low, ax_mfu) = plt.subplots(
+            3,
+            1,
+            figsize=(fig_width, 10.0),
+            sharex=True,
+            gridspec_kw={"height_ratios": [0.3, 0.6, 1.0], "hspace": 0.06},
         )
+        tp_axes = {"high": ax_tp_high, "low": ax_tp_low}
+    else:
+        fig, (ax_tp_low, ax_mfu) = plt.subplots(
+            2,
+            1,
+            figsize=(fig_width, 9.2),
+            sharex=True,
+            gridspec_kw={"height_ratios": [1, 1.0]},
+        )
+        ax_tp_high = None
+        tp_axes = {"low": ax_tp_low}
+
+    throughput_axis_ranges = (
+        {"high": THROUGHPUT_HIGH_RANGE, "low": THROUGHPUT_LOW_RANGE}
+        if use_broken_tp_axis
+        else {"low": (0.0, tp_max * 1.24)}
+    )
+
+    for system_idx, system in enumerate(systems):
+        positions = [idx + (system_idx - center_offset) * width for idx in x]
+        throughput_series, mfu_series = system_series_map[system]
+        plot_throughput_series = [
+            value if value is not None else float("nan") for value in throughput_series
+        ]
+        plot_mfu_series = [
+            value * 100.0 if value is not None else float("nan") for value in mfu_series
+        ]
+
+        tp_bar_sets: dict[str, list[object]] = {}
+        for axis_name, axis in tp_axes.items():
+            tp_bar_sets[axis_name] = axis.bar(
+                positions,
+                plot_throughput_series,
+                width=width * 0.92,
+                color=SYSTEM_COLORS[system],
+                alpha=0.92,
+                label=SYSTEM_LABELS[system] if axis_name == "low" else None,
+            )
         bars_mfu = ax_mfu.bar(
             positions,
-            [value * 100.0 for value in mfu_series],
+            plot_mfu_series,
             width=width * 0.92,
             color=SYSTEM_COLORS[system],
             alpha=0.92,
         )
 
         if system == "ours":
-            for bar, value in zip(bars_tp, throughput_series):
-                if value <= 0.0:
+            for idx, value in enumerate(throughput_series):
+                if value is None or value <= 0.0:
                     continue
-                ax_tp.text(
-                    bar.get_x() + bar.get_width() / 2,
-                    value + max(throughput_values) * 0.015,
-                    f"{value / 1000.0:.1f}k",
-                    ha="center",
-                    va="bottom",
-                    fontsize=max(font_size - 1.5, 9.0),
-                    color="#1F1F1F",
+                axis_name, _ = _throughput_label_y(value, use_broken_tp_axis)
+                _annotate_throughput_bar(
+                    tp_axes[axis_name],
+                    tp_bar_sets[axis_name][idx],
+                    value=value,
+                    axis_limits=throughput_axis_ranges[axis_name],
+                    font_size=font_size,
                 )
             for bar, value in zip(bars_mfu, mfu_series):
-                if value <= 0.0:
+                if value is None or value <= 0.0:
                     continue
                 ax_mfu.text(
                     bar.get_x() + bar.get_width() / 2,
@@ -321,7 +417,8 @@ def plot_context(
                 )
 
     bounds = _group_bounds(records)
-    for ax in (ax_tp, ax_mfu):
+    throughput_axes = [ax_tp_low] if ax_tp_high is None else [ax_tp_high, ax_tp_low]
+    for ax in (*throughput_axes, ax_mfu):
         for group_idx, (category, start, end) in enumerate(bounds):
             ax.axvspan(
                 start - 0.55,
@@ -341,12 +438,18 @@ def plot_context(
         ax.grid(axis="y", linestyle="--", linewidth=0.7, alpha=0.35)
         ax.set_axisbelow(True)
 
-    tp_max = max(throughput_values) if throughput_values else 1.0
-    mfu_max = max(mfu_values) if mfu_values else 1.0
-    ax_tp.set_ylim(0.0, tp_max * 1.24)
+    if use_broken_tp_axis and ax_tp_high is not None:
+        ax_tp_low.set_ylim(*THROUGHPUT_LOW_RANGE)
+        ax_tp_high.set_ylim(*THROUGHPUT_HIGH_RANGE)
+        ax_tp_high.spines["bottom"].set_visible(False)
+        ax_tp_low.spines["top"].set_visible(False)
+        ax_tp_high.tick_params(labelbottom=False, bottom=False)
+        _add_break_marks(ax_tp_high, ax_tp_low)
+    else:
+        ax_tp_low.set_ylim(0.0, tp_max * 1.24)
     ax_mfu.set_ylim(0.0, mfu_max * 100.0 * 1.30)
 
-    tp_oom_y = tp_max * 0.16
+    tp_oom_y = tp_max * 0.16 if not use_broken_tp_axis else THROUGHPUT_LOW_RANGE[1] * 0.16
     mfu_oom_y = mfu_max * 100.0 * 0.14
     for system_idx, system in enumerate(systems):
         positions = [idx + (system_idx - center_offset) * width for idx in x]
@@ -359,7 +462,7 @@ def plot_context(
                 xpos -= width * 0.24
             elif system == "ours":
                 xpos += width * 0.24
-            ax_tp.scatter(
+            ax_tp_low.scatter(
                 [xpos],
                 [tp_oom_y],
                 marker="x",
@@ -368,13 +471,13 @@ def plot_context(
                 color="#D62828",
                 zorder=6,
             )
-            ax_tp.text(
+            ax_tp_low.text(
                 xpos,
-                tp_oom_y + tp_max * 0.035,
+                tp_oom_y + (tp_max * 0.035 if not use_broken_tp_axis else 1400.0),
                 "OOM",
                 ha="center",
                 va="bottom",
-                fontsize=max(font_size - 1.0, 9.5),
+                fontsize=OOM_FONT_SIZE,
                 color="#D62828",
                 fontweight="bold",
             )
@@ -393,18 +496,19 @@ def plot_context(
                 "OOM",
                 ha="center",
                 va="bottom",
-                fontsize=max(font_size - 1.0, 9.5),
+                fontsize=OOM_FONT_SIZE,
                 color="#D62828",
                 fontweight="bold",
             )
 
-    ax_tp.set_ylabel("吞吐量（per GPU tokens/s）", fontsize=font_size + 1.0)
+    ax_tp_low.set_ylabel("吞吐量（per GPU tokens/s）", fontsize=font_size + 1.0)
+    ax_tp_low.yaxis.set_label_coords(-0.085, 0.66)
     ax_mfu.set_ylabel("MFU (%)", fontsize=font_size + 1.0)
-    ax_mfu.set_xlabel("模型", fontsize=font_size + 1.0)
-    ax_tp.set_title(
+    # ax_mfu.set_xlabel("模型", fontsize=font_size + 1.0)
+    (ax_tp_high or ax_tp_low).set_title(
         f"整体性能（{CONTEXT_LABELS.get(context_name, context_name)}）",
         fontsize=font_size + 3.0,
-        pad=5.0,
+        pad=22.0,
     )
     ax_mfu.set_xticks(x)
     ax_mfu.set_xticklabels(
@@ -414,19 +518,23 @@ def plot_context(
         fontsize=max(font_size - 0.5, 10.0),
     )
 
-    top_transform = blended_transform_factory(ax_tp.transData, ax_tp.transAxes)
+    top_axis = ax_tp_high or ax_tp_low
+    top_transform = blended_transform_factory(top_axis.transData, top_axis.transAxes)
+    category_label_y = 0.84 if use_broken_tp_axis else 1.0
+    category_label_va = "bottom" if use_broken_tp_axis else "center"
     for category, start, end in bounds:
         center = (start + end) / 2.0
-        ax_tp.text(
+        top_axis.text(
             center,
-            0.925,
+            category_label_y,
             CATEGORY_LABELS.get(category, category.title()),
             ha="center",
-            va="bottom",
+            va=category_label_va,
             fontsize=font_size + 1.0,
             fontweight="bold",
             color="#334155",
             transform=top_transform,
+            clip_on=False,
             bbox={
                 "boxstyle": "round,pad=0.28",
                 "facecolor": "#FFF8EE" if category == "dense" else "#EEF5FF",
@@ -435,10 +543,10 @@ def plot_context(
             },
         )
         if end < len(records) - 1:
-            for ax in (ax_tp, ax_mfu):
+            for ax in (*throughput_axes, ax_mfu):
                 ax.axvline(end + 0.5, color="#6B7C8F", linewidth=1.8, linestyle="-")
 
-    handles, labels = ax_tp.get_legend_handles_labels()
+    handles, labels = ax_tp_low.get_legend_handles_labels()
     fig.legend(
         handles,
         labels,
@@ -449,7 +557,13 @@ def plot_context(
         frameon=False,
     )
 
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.955))
+    fig.subplots_adjust(
+        top=0.88,
+        bottom=0.12,
+        left=0.11,
+        right=0.98,
+        hspace=0.08 if use_broken_tp_axis else 0.18,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=dpi)
     plt.close(fig)
@@ -465,22 +579,24 @@ def main() -> None:
         raise ValueError("--font-size must be > 0.")
 
     payload = load_data(args.input)
-    augmented_payload = build_augmented_payload(
-        payload=payload,
-        random_seed=args.random_seed,
-        throughput_jitter_ratio=args.throughput_jitter_ratio,
-        mfu_jitter=args.mfu_jitter,
-    )
+    plot_payload = payload
+    if args.throughput_jitter_ratio > 0 or args.mfu_jitter > 0:
+        plot_payload = build_augmented_payload(
+            payload=payload,
+            random_seed=args.random_seed,
+            throughput_jitter_ratio=args.throughput_jitter_ratio,
+            mfu_jitter=args.mfu_jitter,
+        )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    augmented_json_path = args.output_dir / "augmented_data.json"
-    with augmented_json_path.open("w", encoding="utf-8") as f:
-        json.dump(augmented_payload, f, indent=2)
+    plotted_json_path = args.output_dir / "plotted_data.json"
+    with plotted_json_path.open("w", encoding="utf-8") as f:
+        json.dump(plot_payload, f, indent=2)
         f.write("\n")
 
     saved_paths: list[Path] = []
     for context_name in CONTEXTS:
-        records = collect_records(augmented_payload, context_name)
+        records = collect_records(plot_payload, context_name)
         output_path = args.output_dir / f"{context_name}.png"
         plot_context(
             records=records,
@@ -493,7 +609,7 @@ def main() -> None:
 
     for path in saved_paths:
         print(f"Saved figure to: {path}")
-    print(f"Saved augmented JSON to: {augmented_json_path}")
+    print(f"Saved plotted JSON to: {plotted_json_path}")
 
 
 if __name__ == "__main__":

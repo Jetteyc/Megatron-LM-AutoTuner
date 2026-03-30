@@ -388,7 +388,7 @@ def detect_local_gpu_count() -> int | None:
         import torch
 
         count = torch.cuda.device_count()
-    except Exception:
+    except ImportError:
         return None
 
     return count if count > 0 else None
@@ -466,9 +466,13 @@ def build_run_spec(
 
     if nproc_per_node < 1:
         raise ValueError(f"'nproc_per_node' must be >= 1, got {nproc_per_node}")
-
-    world_size = distributed_info["num_nodes"] * nproc_per_node
-
+    
+    num_nodes = int(distributed_info["num_nodes"])
+    world_size = num_nodes * nproc_per_node
+    if num_nodes < 1:
+        raise ValueError("'num_nodes' must be >= 1")
+    if world_size < 1:
+        raise ValueError("calculated world_size must be >= 1")
     if world_size % model_parallel_size != 0:
         raise ValueError(
             "world_size must be divisible by tp*cp*pp, got "
@@ -484,11 +488,8 @@ def build_run_spec(
 
     data_parallel_size = world_size // model_parallel_size
     expert_data_parallel_size = world_size // expert_tensor_model_pipeline_parallel_size
-    num_nodes = int(distributed_info["num_nodes"])
-    if num_nodes < 1:
-        raise ValueError("'num_nodes' must be >= 1")
-    if world_size < 1:
-        raise ValueError("calculated world_size must be >= 1")
+    
+
     if world_size % num_nodes != 0:
         raise ValueError(
             f"world_size({world_size}) is not divisible by num_nodes({num_nodes})"

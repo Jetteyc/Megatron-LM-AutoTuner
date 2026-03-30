@@ -213,7 +213,7 @@ class DataSets:
 
                 input_ids, attention_mask, position_ids, packed_seq_params = (
                     _get_one_model_input_bshd(
-                        model_config, micro_batch_size, seqlen, fix_compute_amount
+                        model_config, batch_size, seqlen, fix_compute_amount
                     )
                 )
                 batch = TensorDict(
@@ -223,7 +223,7 @@ class DataSets:
                         "position_ids": position_ids,
                         "packed_seq_params": packed_seq_params,
                     },
-                    batch_size=micro_batch_size,
+                    batch_size=batch_size,
                     # device=torch.cuda.current_device(),
                     device="cpu",
                 )

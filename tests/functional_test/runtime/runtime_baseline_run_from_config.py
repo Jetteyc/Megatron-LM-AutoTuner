@@ -459,10 +459,11 @@ def build_run_spec(
     nproc_per_node = distributed_info.get("nproc_per_node")
     if nproc_per_node is None:
         if gpus_per_node is None:
-            raise ValueError(
-                "cannot infer nproc_per_node; please pass --nproc-per-node or set CUDA_VISIBLE_DEVICES"
-            )
-        nproc_per_node = gpus_per_node
+            # Fall back to a deterministic default when neither nproc_per_node nor GPUs are detectable.
+            # This preserves prior behavior where nproc_per_node defaulted to 1 when omitted.
+            nproc_per_node = 1
+        else:
+            nproc_per_node = gpus_per_node
 
     if nproc_per_node < 1:
         raise ValueError(f"'nproc_per_node' must be >= 1, got {nproc_per_node}")

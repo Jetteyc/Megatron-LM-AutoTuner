@@ -386,11 +386,12 @@ def detect_local_gpu_count() -> int | None:
 
     try:
         import torch
-
-        count = torch.cuda.device_count()
-    except ImportError:
+    except (ImportError, ModuleNotFoundError):
+        # torch is not available; cannot detect GPU count
         return None
 
+    # Let any CUDA/driver errors from device_count() surface to aid debugging.
+    count = torch.cuda.device_count()
     return count if count > 0 else None
 
 

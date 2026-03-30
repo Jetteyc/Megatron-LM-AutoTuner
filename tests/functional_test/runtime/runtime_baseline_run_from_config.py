@@ -373,6 +373,27 @@ def build_env(env_cfg: dict[str, Any]) -> dict[str, str]:
     return run_env
 
 
+def detect_local_gpu_count() -> int | None:
+    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if cuda_visible_devices is not None:
+        visible_devices = [
+            device.strip()
+            for device in cuda_visible_devices.split(",")
+            if device.strip()
+        ]
+        if visible_devices:
+            return len(visible_devices)
+
+    try:
+        import torch
+
+        count = torch.cuda.device_count()
+    except Exception:
+        return None
+
+    return count if count > 0 else None
+
+
 def build_run_spec(
     repo_root: Path, merged_cfg: dict[str, Any], distributed_info: dict[str, Any]
 ) -> dict[str, Any]:
@@ -423,24 +444,56 @@ def build_run_spec(
             resolve_path(repo_root, str(runtime_config_dir))
         )
 
-    gpus_per_node = (
+    model_parallel_size = (
         parallel_info["tp_size"]
         * parallel_info["cp_size"]
-        * parallel_info["ep_size"]
-        * parallel_info["etp_size"]
         * parallel_info["pp_size"]
     )
-    nproc_per_node = distributed_info.get("nproc_per_node") or gpus_per_node
-    if nproc_per_node < gpus_per_node:
+    expert_tensor_model_pipeline_parallel_size = (
+        parallel_info["etp_size"]
+        * parallel_info["ep_size"]
+        * parallel_info["pp_size"]
+    )
+
+    gpus_per_node = detect_local_gpu_count()
+    nproc_per_node = distributed_info.get("nproc_per_node")
+    if nproc_per_node is None:
+        if gpus_per_node is None:
+            raise ValueError(
+                "cannot infer nproc_per_node; please pass --nproc-per-node or set CUDA_VISIBLE_DEVICES"
+            )
+        nproc_per_node = gpus_per_node
+
+    if nproc_per_node < 1:
+        raise ValueError(f"'nproc_per_node' must be >= 1, got {nproc_per_node}")
+
+    world_size = distributed_info["num_nodes"] * nproc_per_node
+
+    if world_size % model_parallel_size != 0:
         raise ValueError(
-            "nproc_per_node must be >= tp*cp*ep*etp*pp, got "
-            f"nproc_per_node={nproc_per_node} required_min={gpus_per_node}"
+            "world_size must be divisible by tp*cp*pp, got "
+            f"world_size={world_size} divisor={model_parallel_size} "
+            f"(tp={parallel_info['tp_size']} cp={parallel_info['cp_size']} pp={parallel_info['pp_size']})"
         )
-    if nproc_per_node % gpus_per_node != 0:
+    if world_size % expert_tensor_model_pipeline_parallel_size != 0:
         raise ValueError(
-            "nproc_per_node must be divisible by tp*cp*ep*etp*pp, got "
-            f"nproc_per_node={nproc_per_node} divisor={gpus_per_node}"
+            "world_size must be divisible by etp*ep*pp, got "
+            f"world_size={world_size} divisor={expert_tensor_model_pipeline_parallel_size} "
+            f"(etp={parallel_info['etp_size']} ep={parallel_info['ep_size']} pp={parallel_info['pp_size']})"
         )
+
+    data_parallel_size = world_size // model_parallel_size
+    expert_data_parallel_size = world_size // expert_tensor_model_pipeline_parallel_size
+    num_nodes = int(distributed_info["num_nodes"])
+    if num_nodes < 1:
+        raise ValueError("'num_nodes' must be >= 1")
+    if world_size < 1:
+        raise ValueError("calculated world_size must be >= 1")
+    if world_size % num_nodes != 0:
+        raise ValueError(
+            f"world_size({world_size}) is not divisible by num_nodes({num_nodes})"
+        )
+    gpus_per_node = world_size // num_nodes
 
     return {
         "model_name": model_name,
@@ -448,8 +501,11 @@ def build_run_spec(
         "test_cases_file": test_cases_file,
         "test_cases_path": test_cases_path,
         "output_dir": output_dir,
+        "world_size": world_size,
         "gpus_per_node": gpus_per_node,
         "nproc_per_node": nproc_per_node,
+        "data_parallel_size": data_parallel_size,
+        "expert_data_parallel_size": expert_data_parallel_size,
         "case": case_info,
         "parallel": parallel_info,
         "runtime": runtime_info,

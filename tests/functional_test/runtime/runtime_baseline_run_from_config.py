@@ -386,12 +386,11 @@ def detect_local_gpu_count() -> int | None:
 
     try:
         import torch
-    except (ImportError, ModuleNotFoundError):
-        # torch is not available; cannot detect GPU count
+
+        count = torch.cuda.device_count()
+    except Exception:
         return None
 
-    # Let any CUDA/driver errors from device_count() surface to aid debugging.
-    count = torch.cuda.device_count()
     return count if count > 0 else None
 
 
@@ -460,21 +459,16 @@ def build_run_spec(
     nproc_per_node = distributed_info.get("nproc_per_node")
     if nproc_per_node is None:
         if gpus_per_node is None:
-            # Fall back to a deterministic default when neither nproc_per_node nor GPUs are detectable.
-            # This preserves prior behavior where nproc_per_node defaulted to 1 when omitted.
-            nproc_per_node = 1
-        else:
-            nproc_per_node = gpus_per_node
+            raise ValueError(
+                "cannot infer nproc_per_node; please pass --nproc-per-node or set CUDA_VISIBLE_DEVICES"
+            )
+        nproc_per_node = gpus_per_node
 
     if nproc_per_node < 1:
         raise ValueError(f"'nproc_per_node' must be >= 1, got {nproc_per_node}")
-    
-    num_nodes = int(distributed_info["num_nodes"])
-    world_size = num_nodes * nproc_per_node
-    if num_nodes < 1:
-        raise ValueError("'num_nodes' must be >= 1")
-    if world_size < 1:
-        raise ValueError("calculated world_size must be >= 1")
+
+    world_size = distributed_info["num_nodes"] * nproc_per_node
+
     if world_size % model_parallel_size != 0:
         raise ValueError(
             "world_size must be divisible by tp*cp*pp, got "
@@ -490,8 +484,11 @@ def build_run_spec(
 
     data_parallel_size = world_size // model_parallel_size
     expert_data_parallel_size = world_size // expert_tensor_model_pipeline_parallel_size
-    
-
+    num_nodes = int(distributed_info["num_nodes"])
+    if num_nodes < 1:
+        raise ValueError("'num_nodes' must be >= 1")
+    if world_size < 1:
+        raise ValueError("calculated world_size must be >= 1")
     if world_size % num_nodes != 0:
         raise ValueError(
             f"world_size({world_size}) is not divisible by num_nodes({num_nodes})"

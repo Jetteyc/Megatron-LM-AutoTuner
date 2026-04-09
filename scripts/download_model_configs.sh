@@ -45,5 +45,5 @@ for MODEL_NAME in "${TO_DOWNLOAD[@]}"; do
     fi
     
     echo "Downloading model config for ${MODEL_NAME} to ${DEST_DIR}"
-    bash ${HFD_LOCATION} ${MODEL_NAME} --include config.json --local-dir ${DEST_DIR}
+    bash ${HFD_LOCATION} ${MODEL_NAME} --local-dir ${DEST_DIR}
 done

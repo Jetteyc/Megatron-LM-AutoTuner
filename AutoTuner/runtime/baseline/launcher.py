@@ -46,6 +46,7 @@ from AutoTuner.utils.runtime_config import (
 from AutoTuner.utils.structs import InputTestCase
 from AutoTuner.utils.tp_overlap import destroy_ub, initialize_tp_communicators
 from verl.models.mcore import get_mcore_forward_fn, get_mcore_forward_fused_fn
+from verl.models.mcore.util import preprocess_packed_seqs
 from verl.models.mcore.model_forward_fused import patch_fused_forward
 from verl.utils.flops_counter import FlopsCounter
 from verl.utils.megatron.tensor_parallel import vocab_parallel_log_probs_from_logits
@@ -724,7 +725,12 @@ class RuntimeLauncher:
         return itertools.islice(data_iterator, num_items)
 
     def _build_forward_step(self, test_case: InputTestCase):
-        def forward_step(data_iterator, model, checkpoint_activations_microbatch=None):
+        def forward_step(
+            data_iterator,
+            model,
+            return_schedule_plan: bool = False,
+            **kwargs,
+        ):
             self._microbatch_counter += 1
             log_this = self._microbatch_counter == 1 or (
                 self._log_microbatch_every > 0
@@ -752,6 +758,95 @@ class RuntimeLauncher:
                 input_ids=input_ids,
                 attention_mask=attention_mask,
             )
+            effective_label_mask = label_mask
+
+            def loss_func(output_tensor, non_loss_data=False):
+                log_probs = self._extract_log_probs(output_tensor)
+                if log_probs is not None:
+                    if non_loss_data:
+                        return {"log_probs": log_probs}
+                    valid_log_probs = log_probs.masked_select(effective_label_mask)
+                    if valid_log_probs.numel() == 0:
+                        loss = log_probs.float().sum() * 0.0
+                    else:
+                        loss = -valid_log_probs.float().mean()
+                    return loss, {"loss": loss.detach()}
+
+                if non_loss_data:
+                    return {"loss": output_tensor}
+
+                if torch.is_tensor(output_tensor) and output_tensor.ndim == 0:
+                    loss = output_tensor.float()
+                    return loss, {"loss": loss.detach()}
+
+                valid_loss = None
+                if (
+                    torch.is_tensor(output_tensor)
+                    and torch.is_tensor(effective_label_mask)
+                    and output_tensor.shape[: effective_label_mask.ndim]
+                    == effective_label_mask.shape
+                ):
+                    valid_loss = output_tensor.masked_select(effective_label_mask)
+
+                if valid_loss is None:
+                    loss = output_tensor.float().mean()
+                elif valid_loss.numel() == 0:
+                    loss = output_tensor.float().sum() * 0.0
+                else:
+                    loss = valid_loss.float().mean()
+                return loss, {"loss": loss.detach()}
+
+            if return_schedule_plan:
+                assert hasattr(unwrapped, "build_schedule_plan"), (
+                    "Model does not support build_schedule_plan(); cannot use combined 1f1b"
+                )
+
+                pre_process = getattr(unwrapped, "pre_process", True)
+                sequence_parallel = getattr(unwrapped.config, "sequence_parallel", False)
+                schedule_kwargs = {
+                    "decoder_input": None,
+                    "extra_block_kwargs": None,
+                    "runtime_gather_output": None,
+                }
+
+                if test_case.shape == "bshd":
+                    # For bshd with context parallel (cp>1), verl.preprocess_bshd asserts cp==1.
+                    # Keep native bshd tensors here and let Megatron schedule plan handle CP path.
+                    effective_label_mask = label_mask
+                    schedule_plan = unwrapped.build_schedule_plan(
+                        input_ids=input_ids,
+                        position_ids=position_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                        loss_mask=effective_label_mask,
+                        **schedule_kwargs,
+                    )
+                else:
+                    input_ids_rmpad, packed_seq_params = preprocess_packed_seqs(
+                        input_ids,
+                        attention_mask,
+                        pre_process=pre_process,
+                    )
+                    labels_rmpad, _ = preprocess_packed_seqs(
+                        labels,
+                        attention_mask,
+                        pre_process=True,
+                    )
+                    effective_label_mask, _ = preprocess_packed_seqs(
+                        label_mask,
+                        attention_mask,
+                        pre_process=True,
+                    )
+                    schedule_plan = unwrapped.build_schedule_plan(
+                        input_ids=input_ids_rmpad.contiguous(),
+                        position_ids=position_ids,
+                        attention_mask=attention_mask,
+                        labels=labels_rmpad,
+                        packed_seq_params=packed_seq_params,
+                        loss_mask=effective_label_mask,
+                        **schedule_kwargs,
+                    )
+                return schedule_plan, loss_func
 
             if test_case.shape == "bshd":
                 self._maybe_init_tp_overlap(tokens=int(attention_mask.sum().item()))
@@ -818,26 +913,6 @@ class RuntimeLauncher:
                     "model forward done",
                     all_ranks=True,
                 )
-
-            def loss_func(output_tensor, non_loss_data=False):
-                log_probs = self._extract_log_probs(output_tensor)
-                if log_probs is not None:
-                    if non_loss_data:
-                        return {"log_probs": log_probs}
-                    valid_log_probs = log_probs.masked_select(label_mask)
-                    if valid_log_probs.numel() == 0:
-                        loss = log_probs.float().sum() * 0.0
-                    else:
-                        loss = -valid_log_probs.float().mean()
-                    return loss, {"loss": loss.detach()}
-                if non_loss_data:
-                    return {"loss": output_tensor}
-                valid_loss = output_tensor.masked_select(label_mask)
-                if valid_loss.numel() == 0:
-                    loss = output_tensor.float().sum() * 0.0
-                else:
-                    loss = valid_loss.float().mean()
-                return loss, {"loss": loss.detach()}
 
             return output, loss_func
 

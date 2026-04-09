@@ -12,7 +12,7 @@ BASE_DATA_DIR = os.environ.get("BASE_DATA_DIR", "/data/common/")
 HUGGINGFACE_MODEL_DIR = os.environ.get(
     "HUGGINGFACE_MODEL_DIR", os.path.join(BASE_DATA_DIR, "models")
 )
-HUGGINGFACE_MODEL_DIR = ""
+# HUGGINGFACE_MODEL_DIR = ""
 
 
 def get_hf_model_config(model_name: str, **kwargs) -> AutoConfig:

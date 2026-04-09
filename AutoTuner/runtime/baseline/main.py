@@ -18,6 +18,62 @@ from AutoTuner.utils.runtime_config import parse_ddp_simulate_config
 from AutoTuner.utils.structs import InputTestCase
 
 
+def _debug_print_runtime_context(args, stage: str):
+    keys = [
+        "RANK",
+        "LOCAL_RANK",
+        "WORLD_SIZE",
+        "MASTER_ADDR",
+        "MASTER_PORT",
+        "NCCL_DEBUG",
+        "NCCL_SOCKET_IFNAME",
+        "NVTE_ENABLE_NVSHMEM",
+        "NVSHMEM_HOME",
+        "NVSHMEM_DEBUG",
+        "NVSHMEM_IB_ADDR_FAMILY",
+        "NVSHMEM_IB_ADDR_RANGE",
+        "CP_INTRANODE_BACKEND",
+        "CP_INTERNODE_BACKEND",
+        "EP_INTRANODE_BACKEND",
+        "EP_INTERNODE_BACKEND",
+        "TP_INTRANODE_BACKEND",
+        "PP_INTERNODE_BACKEND",
+        "DP_INTERNODE_BACKEND",
+        "CUDA_LAUNCH_BLOCKING",
+        "TORCH_USE_CUDA_DSA",
+        "TORCH_CUDA_ARCH_LIST",
+    ]
+    env_info = {k: os.getenv(k, "<unset>") for k in keys}
+
+    rank = os.getenv("RANK", "<unset>")
+    local_rank = os.getenv("LOCAL_RANK", "<unset>")
+    cuda_available = torch.cuda.is_available()
+    device_count = torch.cuda.device_count() if cuda_available else 0
+    current_device = torch.cuda.current_device() if cuda_available else "cpu"
+    device_name = (
+        torch.cuda.get_device_name(current_device)
+        if cuda_available and isinstance(current_device, int)
+        else "cpu"
+    )
+
+    print(
+        f"[runtime-debug][baseline][{stage}] rank={rank} local_rank={local_rank} "
+        f"model={args.model_name} test_cases_file={args.test_cases_file} "
+        f"tp/cp/ep/etp/pp/vpp="
+        f"{args.tensor_model_parallel_size}/{args.context_parallel_size}/{args.expert_parallel_size}/"
+        f"{args.expert_tensor_parallel_size}/{args.pipeline_model_parallel_size}/"
+        f"{args.virtual_pipeline_model_parallel_size} "
+        f"ddp_simulate_cfg={args.real_ddp_simulate_config_file} "
+        f"tp_comm_overlap_cfg={args.real_tp_comm_overlap_cfg}"
+    )
+    print(
+        f"[runtime-debug][baseline][{stage}] torch={torch.__version__} "
+        f"cuda_available={cuda_available} cuda_device_count={device_count} "
+        f"current_device={current_device} device_name={device_name}"
+    )
+    print(f"[runtime-debug][baseline][{stage}] env={env_info}")
+
+
 def str_to_bool(value: str) -> bool:
     val_processed = value.strip().lower()
     if val_processed == "true":
@@ -267,6 +323,49 @@ def load_override_tf_config(path: str) -> dict:
         return json.load(fp)
 
 
+def _is_backend_enabled(name: str, backend: str) -> bool:
+    return os.getenv(name, "").strip().lower() == backend
+
+
+def should_enable_deepep_by_backend(args) -> bool:
+    """Best-effort DeepEP enable decision from runtime backend configuration."""
+    if args.expert_parallel_size <= 1:
+        return False
+    use_intranode_deepep = _is_backend_enabled("EP_INTRANODE_BACKEND", "deepep")
+    # policy.md phase-1: internode EP accelerator path falls back to torch.dist.
+    return use_intranode_deepep
+
+
+def apply_backend_driven_tf_overrides(args, override_tf_config: dict) -> dict:
+    """Patch TF override config to match selected EP backend policy."""
+    use_deepep = should_enable_deepep_by_backend(args)
+    target_dispatcher = "flex" if use_deepep else "alltoall"
+
+    old_dispatcher = override_tf_config.get("moe_token_dispatcher_type")
+    old_enable_deepep = override_tf_config.get("moe_enable_deepep")
+
+    override_tf_config["moe_token_dispatcher_type"] = target_dispatcher
+    override_tf_config["moe_enable_deepep"] = use_deepep
+
+    if _is_backend_enabled("EP_INTERNODE_BACKEND", "deepep"):
+        log_rank0(
+            "runtime baseline note: EP_INTERNODE_BACKEND=deepep is currently treated as "
+            "torch_dist (internode accelerator fallback policy)"
+        )
+
+    if old_dispatcher != target_dispatcher or old_enable_deepep != use_deepep:
+        log_rank0(
+            "runtime baseline auto-updated override_tf_config by EP backend selection: "
+            f"EP_INTRANODE_BACKEND={os.getenv('EP_INTRANODE_BACKEND', '<unset>')} "
+            f"EP_INTERNODE_BACKEND={os.getenv('EP_INTERNODE_BACKEND', '<unset>')} "
+            f"expert_parallel_size={args.expert_parallel_size} "
+            f"moe_token_dispatcher_type={old_dispatcher}->{target_dispatcher} "
+            f"moe_enable_deepep={old_enable_deepep}->{use_deepep}"
+        )
+
+    return override_tf_config
+
+
 def load_ddp_simulate_config(path: str) -> dict[str, float]:
     with open(path, "r") as fp:
         ddp_simulate_config = json.load(fp)
@@ -299,6 +398,7 @@ def main():
             f"Invalid log level: {args.log_level}. Use DEBUG, INFO, WARNING, or ERROR."
         )
     set_logging_level(level)
+    _debug_print_runtime_context(args, stage="before_init_distributed")
     log_rank0(
         "runtime baseline start: "
         f"model={args.model_name} "
@@ -329,6 +429,7 @@ def main():
         pp=args.pipeline_model_parallel_size,
         vpp=args.virtual_pipeline_model_parallel_size,
     )
+    _debug_print_runtime_context(args, stage="after_init_distributed")
     if torch.distributed.is_initialized():
         log_with_rank(
             "distributed initialized: "
@@ -347,6 +448,14 @@ def main():
             args.real_override_model_config_file
         )
         override_tf_config = load_override_tf_config(args.real_override_tf_config_file)
+        override_tf_config = apply_backend_driven_tf_overrides(args, override_tf_config)
+        if args.expert_parallel_size <= 1:
+            if override_tf_config.get("overlap_moe_expert_parallel_comm", None) is not False:
+                log_rank0(
+                    "runtime baseline forcing overlap_moe_expert_parallel_comm=False "
+                    f"because expert_parallel_size={args.expert_parallel_size}"
+                )
+            override_tf_config["overlap_moe_expert_parallel_comm"] = False
         dp_allreduce_comm_config = load_ddp_simulate_config(
             args.real_ddp_simulate_config_file
         )
@@ -384,7 +493,12 @@ def main():
                 "runtime baseline summary saved to "
                 f"{os.path.join(runtime_output_dir, 'runtime_summary.json')}"
             )
-    except Exception:
+    except Exception as exc:
+        print(
+            f"[runtime-debug][baseline][exception] rank={os.getenv('RANK', '<unset>')} "
+            f"local_rank={os.getenv('LOCAL_RANK', '<unset>')} "
+            f"type={type(exc).__name__} msg={exc}"
+        )
         log_with_rank(
             "runtime baseline exception:\n" + traceback.format_exc(),
             level=logging.ERROR,
